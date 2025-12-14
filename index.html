@@ -15,12 +15,13 @@
 </head>
 
 <body>
-  <div class="app-wrap">
+  <div class="app-wrap no-scroll">
+
     <!-- Header -->
     <header class="topbar card">
       <div class="brand">
         <div class="title">🐻 MBTI熊・冒險者人格圖鑑</div>
-        <div class="subtitle">查人格｜看職場與親密關係配對｜熊熊提醒</div>
+        <div class="subtitle">查人格｜看配對｜熊熊提醒</div>
       </div>
 
       <div class="mayor">
@@ -37,9 +38,9 @@
       </div>
     </header>
 
-    <!-- Main -->
-    <main class="main">
-      <!-- Quick Actions -->
+    <!-- Main (不捲動：用格狀排版塞進 1 屏) -->
+    <main class="main-grid">
+      <!-- 查詢人格 -->
       <section class="card">
         <div class="section-title">🔎 查詢人格</div>
 
@@ -48,7 +49,6 @@
             <div class="label">輸入 MBTI（例如 INFP）</div>
             <input id="typeInput" class="input" maxlength="4" placeholder="例如：ENFJ / ISTP" />
           </label>
-
           <button id="goTypeBtn" class="btn primary">查看</button>
         </div>
 
@@ -57,32 +57,39 @@
             <div class="label">或搜尋其他人格</div>
             <select id="typeSelect" class="select"></select>
           </label>
-          <button id="randomBtn" class="btn">隨機一種</button>
+          <button id="randomBtn" class="btn">隨機</button>
         </div>
 
         <div class="row">
-          <label class="field">
-            <div class="label">MBTI 測驗網站（可改成你想放的連結）</div>
-            <input id="testUrl" class="input" placeholder="貼上測驗網址（例如 16personalities）" />
-          </label>
-          <button id="openTestBtn" class="btn">前往測驗</button>
+          <button id="openDetailBtn" class="btn primary wide">📘 開啟人格詳細解說</button>
         </div>
 
-        <div class="hint">
-          💡 小提醒：MBTI 是「偏好」不是能力高低；用來理解自己與他人，不用來貼標籤。
+        <div class="hint small">
+          💡 MBTI 是「偏好」不是能力高低；用來理解彼此，不用來貼標籤。
         </div>
       </section>
 
-      <!-- Result -->
-      <section id="resultCard" class="card">
-        <div class="section-title">📘 人格詳細解說</div>
-        <div id="result" class="result">
-          請輸入或選擇一種 MBTI 人格～
-        </div>
-      </section>
-
-      <!-- Pairing -->
+      <!-- 測驗連結 + 快捷 -->
       <section class="card">
+        <div class="section-title">🧪 測驗入口</div>
+
+        <label class="field">
+          <div class="label">MBTI 測驗網站（可改成你想放的連結）</div>
+          <input id="testUrl" class="input" placeholder="貼上測驗網址（例如 16personalities）" />
+        </label>
+
+        <div class="row">
+          <button id="openTestBtn" class="btn primary wide">前往測驗</button>
+        </div>
+
+        <div class="mini-actions">
+          <button id="copyTypeBtn" class="chip">📌 複製目前人格</button>
+          <button id="swapPairBtn" class="chip">🔁 交換配對</button>
+        </div>
+      </section>
+
+      <!-- 配對 -->
+      <section class="card span2">
         <div class="section-title">🤝 配對相處指南</div>
 
         <div class="row two">
@@ -102,26 +109,62 @@
             <div class="label">情境</div>
             <div class="seg">
               <button class="seg-btn active" data-mode="work">職場</button>
-              <button class="seg-btn" data-mode="love">親密關係</button>
+              <button class="seg-btn" data-mode="love">親密</button>
             </div>
           </label>
-          <button id="pairBtn" class="btn primary">分析配對</button>
+
+          <button id="pairBtn" class="btn primary">分析</button>
         </div>
 
-        <div id="pairResult" class="pair-result">
-          選兩種人格後按「分析配對」，我會給你們更融洽的調整方法。
+        <!-- 這裡不捲動：只顯示摘要，完整內容可彈窗 -->
+        <div class="pair-summary" id="pairSummary">選兩種人格後按「分析」</div>
+        <div class="row">
+          <button id="openPairDetailBtn" class="btn wide">🪄 開啟配對完整內容</button>
         </div>
       </section>
     </main>
 
     <!-- Bottom Dock -->
     <nav class="dock">
-      <button id="dockHome" class="dock-btn active">🏠 人格圖鑑</button>
-      <a class="dock-btn" href="https://instagram.com/luckygbear" target="_blank" rel="noopener">📷 追蹤 @luckygbear</a>
+      <button id="dockHome" class="dock-btn active">🏠 人格</button>
+      <a class="dock-btn" href="https://instagram.com/luckygbear" target="_blank" rel="noopener">📷 @luckygbear</a>
       <button id="dockInstall" class="dock-btn">➕ 新增到主畫面</button>
     </nav>
 
-    <div class="safe-space"></div>
+  </div>
+
+  <!-- Modal：人格詳細解說 -->
+  <div id="modalType" class="modal" aria-hidden="true">
+    <div class="modal-backdrop" data-close="1"></div>
+    <div class="modal-card" role="dialog" aria-modal="true">
+      <div class="modal-head">
+        <div class="modal-title" id="modalTypeTitle">人格詳細解說</div>
+        <button class="modal-close" data-close="1">✕</button>
+      </div>
+      <div class="modal-body">
+        <div id="modalTypeContent" class="modal-content"></div>
+      </div>
+      <div class="modal-foot">
+        <button class="btn" data-close="1">關閉</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal：配對完整內容 -->
+  <div id="modalPair" class="modal" aria-hidden="true">
+    <div class="modal-backdrop" data-close="1"></div>
+    <div class="modal-card" role="dialog" aria-modal="true">
+      <div class="modal-head">
+        <div class="modal-title">配對完整內容</div>
+        <button class="modal-close" data-close="1">✕</button>
+      </div>
+      <div class="modal-body">
+        <div id="modalPairContent" class="modal-content"></div>
+      </div>
+      <div class="modal-foot">
+        <button class="btn" data-close="1">關閉</button>
+      </div>
+    </div>
   </div>
 
   <script src="./app.js"></script>
