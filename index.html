@@ -17,7 +17,6 @@
 <body>
   <div class="app-wrap">
 
-    <!-- Header -->
     <header class="topbar card">
       <div class="brand">
         <div class="title">🐻 MBTI熊・冒險者人格圖鑑</div>
@@ -38,9 +37,7 @@
       </div>
     </header>
 
-    <!-- Main -->
     <main class="main">
-      <!-- 查詢人格（橫向整條，上下排列） -->
       <section class="card">
         <div class="section-title">🔎 查詢人格</div>
 
@@ -69,7 +66,6 @@
         </div>
       </section>
 
-      <!-- 測驗入口（橫向整條，上下排列） -->
       <section class="card">
         <div class="section-title">🧪 測驗入口</div>
 
@@ -85,12 +81,9 @@
         <div class="mini-actions">
           <button id="copyTypeBtn" class="chip">📌 複製目前人格</button>
         </div>
-
-        <!-- ✅ 新增到主畫面按鈕：已移除（你要求去掉） -->
       </section>
     </main>
 
-    <!-- Bottom Dock：左下角改成配對 -->
     <nav class="dock">
       <button id="dockPair" class="dock-btn active">🤝 配對</button>
       <a class="dock-btn" href="https://instagram.com/luckygbear" target="_blank" rel="noopener">📷 追蹤熊熊</a>
@@ -116,7 +109,7 @@
     </div>
   </div>
 
-  <!-- Modal：配對相處指南（✅ Dock 左下角開啟；分析後同視窗顯示結果） -->
+  <!-- Modal：配對相處指南 -->
   <div id="modalPair" class="modal" aria-hidden="true">
     <div class="modal-backdrop" data-close="1"></div>
     <div class="modal-card" role="dialog" aria-modal="true">
@@ -155,6 +148,14 @@
 
         <div class="section-title" style="margin-top:10px;">📌 分析結果</div>
         <div id="modalPairContent" class="modal-content">請先選擇兩種人格，按「分析」。</div>
+
+        <!-- ✅ 配對：兩顆功能鍵 -->
+        <div class="row" style="margin-top:10px;">
+          <button id="pairActionBtn" class="btn wide">✅ 生成相處行動清單（3條）</button>
+        </div>
+        <div class="row">
+          <button id="pairSaveBtn" class="btn primary wide">💾 一鍵存進筆記本</button>
+        </div>
       </div>
 
       <div class="modal-foot">
@@ -163,12 +164,12 @@
     </div>
   </div>
 
-  <!-- Modal：筆記本（✅ 備註 + 分類 + 搜尋/篩選） -->
+  <!-- Modal：筆記本 -->
   <div id="modalNotebook" class="modal" aria-hidden="true">
     <div class="modal-backdrop" data-close="1"></div>
     <div class="modal-card" role="dialog" aria-modal="true">
       <div class="modal-head">
-        <div class="modal-title">📓 筆記本（人物 MBTI 記錄）</div>
+        <div class="modal-title">📓 筆記本（人物 / 配對紀錄）</div>
         <button class="modal-close" data-close="1">✕</button>
       </div>
 
@@ -190,29 +191,59 @@
             </label>
           </div>
 
-          <label class="field">
-            <div class="label">他/她的 MBTI</div>
-            <select id="noteType" class="select"></select>
-          </label>
+          <div class="row two">
+            <label class="field">
+              <div class="label">他/她的 MBTI</div>
+              <select id="noteType" class="select"></select>
+            </label>
+
+            <label class="field">
+              <div class="label">星座（可留空）</div>
+              <input id="noteZodiac" class="input" placeholder="例如：天秤座" />
+            </label>
+          </div>
 
           <label class="field">
             <div class="label">備註（相處地雷 / 喜歡的溝通方式 / 你想記的）</div>
             <textarea id="noteMemo" class="textarea" rows="3" placeholder="例如：不喜歡臨時改時間；喜歡先說結論；需要被肯定…"></textarea>
           </label>
 
+          <!-- ✅ 人物：一鍵生成溝通建議 -->
           <div class="row">
-            <button id="noteSaveBtn" class="btn primary wide">➕ 新增到筆記本</button>
+            <button id="noteAdviceBtn" class="btn wide">🗣️ 一鍵生成對他溝通建議</button>
+          </div>
+
+          <div class="row">
+            <button id="noteSaveBtn" class="btn primary wide">➕ 新增人物筆記</button>
           </div>
 
           <div class="hint small">
-            💾 會自動儲存在手機（localStorage），關掉網頁也不會不見。
+            💾 會自動儲存在手機（localStorage），也可用下方匯出/匯入備份。
+          </div>
+        </div>
+
+        <div class="card-soft" style="margin-top:10px;">
+          <div class="section-title">📦 備份</div>
+          <div class="row">
+            <button id="noteExportBtn" class="btn">匯出 JSON</button>
+            <button id="noteImportBtn" class="btn">匯入 JSON</button>
+          </div>
+
+          <input id="noteImportFile" type="file" accept="application/json,.json" style="display:none" />
+
+          <label class="field" style="margin-top:8px;">
+            <div class="label">或貼上 JSON（可選）</div>
+            <textarea id="noteImportText" class="textarea" rows="4" placeholder='貼上匯出的 JSON 內容（選用）'></textarea>
+          </label>
+          <div class="row">
+            <button id="noteImportTextBtn" class="btn primary wide">從貼上內容匯入</button>
           </div>
         </div>
 
         <div class="note-filter card-soft" style="margin-top:10px;">
           <div class="row">
             <label class="field">
-              <div class="label">搜尋（名字 / MBTI / 備註）</div>
+              <div class="label">搜尋（名字 / MBTI / 星座 / 備註 / 配對）</div>
               <input id="noteSearch" class="input" placeholder="輸入關鍵字…" />
             </label>
           </div>
