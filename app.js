@@ -423,8 +423,7 @@ function renderType(t){
 ${d.bear}
   `.trim();
 
-  result.innerHTML = `<div class="result">${escapeToHtml(block)}</div>`;
-}
+result.innerHTML = `<div class="result">${block}</div>`;}
 
 // 保留換行的安全輸出
 function escapeToHtml(text){
