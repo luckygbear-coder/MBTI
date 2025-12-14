@@ -4,7 +4,6 @@
   --stroke:#f5d3a6;
   --ink:#4b3044;
   --muted:#7a5a6a;
-  --accent:#f4a63a;
   --shadow:0 8px 18px rgba(0,0,0,0.14);
 }
 
@@ -23,7 +22,7 @@ body{
   min-height:100vh;
   display:flex;
   flex-direction:column;
-  padding:10px 10px 96px; /* 底下留給 dock */
+  padding:10px 10px 96px;
 }
 
 .card{
@@ -32,6 +31,13 @@ body{
   border-radius:18px;
   box-shadow:var(--shadow);
   padding:10px 10px 12px;
+}
+
+.card-soft{
+  background:#fff;
+  border:2px solid var(--stroke);
+  border-radius:16px;
+  padding:10px;
 }
 
 .topbar{ display:flex; flex-direction:column; gap:8px; }
@@ -88,7 +94,7 @@ body{
 .field{ flex:1; }
 .label{ font-size:12px; color:var(--muted); margin-bottom:6px; }
 
-.input,.select{
+.input,.select,.textarea{
   width:100%;
   border:2px solid var(--stroke);
   border-radius:14px;
@@ -98,6 +104,7 @@ body{
   background:#fff;
   color:var(--ink);
 }
+.textarea{ resize:vertical; }
 
 .btn{
   border:2px solid var(--stroke);
@@ -127,6 +134,11 @@ body{
   font-size:12px;
   cursor:pointer;
 }
+.chip-filter.active{
+  background:#ffe6f0;
+  border-color:#ffc0d6;
+  font-weight:900;
+}
 
 .seg{ display:flex; gap:8px; }
 .seg-btn{
@@ -144,17 +156,7 @@ body{
   font-weight:900;
 }
 
-/* 配對摘要 */
-.pair-summary{
-  background:#fff;
-  border:2px solid var(--stroke);
-  border-radius:16px;
-  padding:10px 12px;
-  font-size:13px;
-  line-height:1.6;
-}
-
-/* Dock 固定底部 */
+/* Dock */
 .dock{
   position:fixed;
   left:50%;
@@ -185,23 +187,10 @@ body{
   font-weight:900;
 }
 
-/* =======================
-   Modal（彈窗可捲動）
-======================= */
-.modal{
-  position:fixed;
-  inset:0;
-  display:none;
-  z-index:50;
-}
+/* Modal */
+.modal{ position:fixed; inset:0; display:none; z-index:50; }
 .modal.show{ display:block; }
-
-.modal-backdrop{
-  position:absolute;
-  inset:0;
-  background:rgba(0,0,0,0.35);
-}
-
+.modal-backdrop{ position:absolute; inset:0; background:rgba(0,0,0,0.35); }
 .modal-card{
   position:absolute;
   left:50%;
@@ -217,7 +206,6 @@ body{
   flex-direction:column;
   overflow:hidden;
 }
-
 .modal-head{
   padding:10px 12px;
   background:#fff;
@@ -235,11 +223,7 @@ body{
   height:34px;
   cursor:pointer;
 }
-
-.modal-body{
-  padding:10px 12px;
-  overflow:auto;
-}
+.modal-body{ padding:10px 12px; overflow:auto; }
 .modal-content{
   background:#fff;
   border:2px solid var(--stroke);
@@ -247,9 +231,18 @@ body{
   padding:12px;
   font-size:13px;
   line-height:1.7;
+  white-space:pre-wrap;
+}
+.modal-foot{
+  padding:10px 12px;
+  background:#fff;
+  border-top:2px solid var(--stroke);
+  display:flex;
+  justify-content:flex-end;
+  gap:8px;
 }
 
-/* 人格 pill */
+/* pills */
 .kv{ display:flex; flex-wrap:wrap; gap:8px; margin-bottom:10px; }
 .pill{
   display:inline-flex;
@@ -263,16 +256,7 @@ body{
 }
 .pill b{ font-weight:900; }
 
-.modal-foot{
-  padding:10px 12px;
-  background:#fff;
-  border-top:2px solid var(--stroke);
-  display:flex;
-  justify-content:flex-end;
-  gap:8px;
-}
-
-/* 筆記本清單 */
+/* Notebook list */
 .note-list{
   background:#fff;
   border:2px solid var(--stroke);
@@ -293,6 +277,15 @@ body{
 .note-left{ flex:1; }
 .note-name{ font-weight:900; }
 .note-meta{ color:var(--muted); font-size:12px; margin-top:2px; }
+.note-memo{
+  margin-top:6px;
+  background:#fff7e6;
+  border:1px solid rgba(245,211,166,0.9);
+  border-radius:12px;
+  padding:8px 10px;
+  font-size:12px;
+  color:#5b3b4a;
+}
 .note-actions{ display:flex; gap:6px; }
 .note-btn{
   border:2px solid var(--stroke);
