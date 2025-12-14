@@ -15,7 +15,7 @@
 </head>
 
 <body>
-  <div class="app-wrap no-scroll">
+  <div class="app-wrap">
 
     <!-- Header -->
     <header class="topbar card">
@@ -38,9 +38,9 @@
       </div>
     </header>
 
-    <!-- Main (不捲動：用格狀排版塞進 1 屏) -->
-    <main class="main-grid">
-      <!-- 查詢人格 -->
+    <!-- Main -->
+    <main class="main">
+      <!-- 查詢人格（改成橫向整條，上下排列） -->
       <section class="card">
         <div class="section-title">🔎 查詢人格</div>
 
@@ -61,7 +61,7 @@
         </div>
 
         <div class="row">
-          <button id="openDetailBtn" class="btn primary wide">📘 開啟人格詳細解說</button>
+          <button id="openDetailBtn" class="btn wide">📘 開啟人格詳細解說</button>
         </div>
 
         <div class="hint small">
@@ -69,7 +69,7 @@
         </div>
       </section>
 
-      <!-- 測驗連結 + 快捷 -->
+      <!-- 測驗入口（改成橫向整條，上下排列） -->
       <section class="card">
         <div class="section-title">🧪 測驗入口</div>
 
@@ -86,10 +86,15 @@
           <button id="copyTypeBtn" class="chip">📌 複製目前人格</button>
           <button id="swapPairBtn" class="chip">🔁 交換配對</button>
         </div>
+
+        <!-- ✅ 新增到主畫面移到這裡 -->
+        <div class="row">
+          <button id="installBtn" class="btn wide">➕ 新增到主畫面</button>
+        </div>
       </section>
 
-      <!-- 配對 -->
-      <section class="card span2">
+      <!-- 配對相處指南 -->
+      <section class="card">
         <div class="section-title">🤝 配對相處指南</div>
 
         <div class="row two">
@@ -112,23 +117,18 @@
               <button class="seg-btn" data-mode="love">親密</button>
             </div>
           </label>
-
           <button id="pairBtn" class="btn primary">分析</button>
         </div>
 
-        <!-- 這裡不捲動：只顯示摘要，完整內容可彈窗 -->
-        <div class="pair-summary" id="pairSummary">選兩種人格後按「分析」</div>
-        <div class="row">
-          <button id="openPairDetailBtn" class="btn wide">🪄 開啟配對完整內容</button>
-        </div>
+        <div class="pair-summary" id="pairSummary">選兩種人格後按「分析」，會跳出完整配對視窗。</div>
       </section>
     </main>
 
-    <!-- Bottom Dock -->
+    <!-- Bottom Dock（第三顆改成筆記本；IG 改名追蹤熊熊；不再放新增到主畫面） -->
     <nav class="dock">
       <button id="dockHome" class="dock-btn active">🏠 人格</button>
-      <a class="dock-btn" href="https://instagram.com/luckygbear" target="_blank" rel="noopener">📷 @luckygbear</a>
-      <button id="dockInstall" class="dock-btn">➕ 新增到主畫面</button>
+      <a class="dock-btn" href="https://instagram.com/luckygbear" target="_blank" rel="noopener">📷 追蹤熊熊</a>
+      <button id="dockNotebook" class="dock-btn">📓 筆記本</button>
     </nav>
 
   </div>
@@ -150,18 +150,61 @@
     </div>
   </div>
 
-  <!-- Modal：配對完整內容 -->
+  <!-- Modal：配對完整內容（✅ 分析後自動跳出） -->
   <div id="modalPair" class="modal" aria-hidden="true">
     <div class="modal-backdrop" data-close="1"></div>
     <div class="modal-card" role="dialog" aria-modal="true">
       <div class="modal-head">
-        <div class="modal-title">配對完整內容</div>
+        <div class="modal-title" id="modalPairTitle">配對完整內容</div>
         <button class="modal-close" data-close="1">✕</button>
       </div>
       <div class="modal-body">
         <div id="modalPairContent" class="modal-content"></div>
       </div>
       <div class="modal-foot">
+        <button class="btn" data-close="1">關閉</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal：筆記本 -->
+  <div id="modalNotebook" class="modal" aria-hidden="true">
+    <div class="modal-backdrop" data-close="1"></div>
+    <div class="modal-card" role="dialog" aria-modal="true">
+      <div class="modal-head">
+        <div class="modal-title">📓 筆記本（人物 MBTI 記錄）</div>
+        <button class="modal-close" data-close="1">✕</button>
+      </div>
+
+      <div class="modal-body">
+        <div class="note-form">
+          <label class="field">
+            <div class="label">暱稱 / 名字</div>
+            <input id="noteName" class="input" placeholder="例如：媽媽 / 阿哲 / 同事小美" />
+          </label>
+
+          <label class="field">
+            <div class="label">他/她的 MBTI</div>
+            <select id="noteType" class="select"></select>
+          </label>
+
+          <div class="row">
+            <button id="noteSaveBtn" class="btn primary wide">➕ 新增到筆記本</button>
+          </div>
+
+          <div class="hint small">
+            💾 會自動儲存在手機（localStorage），關掉網頁也不會不見。
+          </div>
+        </div>
+
+        <div class="note-list-wrap">
+          <div class="section-title">📌 已記錄清單</div>
+          <div id="noteList" class="note-list">尚未新增任何筆記。</div>
+        </div>
+      </div>
+
+      <div class="modal-foot">
+        <button id="noteClearBtn" class="btn">清空全部</button>
         <button class="btn" data-close="1">關閉</button>
       </div>
     </div>
