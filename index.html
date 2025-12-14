@@ -40,7 +40,7 @@
 
     <!-- Main -->
     <main class="main">
-      <!-- 查詢人格（改成橫向整條，上下排列） -->
+      <!-- 查詢人格（橫向整條，上下排列） -->
       <section class="card">
         <div class="section-title">🔎 查詢人格</div>
 
@@ -69,7 +69,7 @@
         </div>
       </section>
 
-      <!-- 測驗入口（改成橫向整條，上下排列） -->
+      <!-- 測驗入口（橫向整條，上下排列） -->
       <section class="card">
         <div class="section-title">🧪 測驗入口</div>
 
@@ -84,49 +84,15 @@
 
         <div class="mini-actions">
           <button id="copyTypeBtn" class="chip">📌 複製目前人格</button>
-          <button id="swapPairBtn" class="chip">🔁 交換配對</button>
         </div>
 
-        <!-- ✅ 新增到主畫面移到這裡 -->
-        <div class="row">
-          <button id="installBtn" class="btn wide">➕ 新增到主畫面</button>
-        </div>
-      </section>
-
-      <!-- 配對相處指南 -->
-      <section class="card">
-        <div class="section-title">🤝 配對相處指南</div>
-
-        <div class="row two">
-          <label class="field">
-            <div class="label">你（或 A）</div>
-            <select id="pairA" class="select"></select>
-          </label>
-
-          <label class="field">
-            <div class="label">對方（或 B）</div>
-            <select id="pairB" class="select"></select>
-          </label>
-        </div>
-
-        <div class="row">
-          <label class="field">
-            <div class="label">情境</div>
-            <div class="seg">
-              <button class="seg-btn active" data-mode="work">職場</button>
-              <button class="seg-btn" data-mode="love">親密</button>
-            </div>
-          </label>
-          <button id="pairBtn" class="btn primary">分析</button>
-        </div>
-
-        <div class="pair-summary" id="pairSummary">選兩種人格後按「分析」，會跳出完整配對視窗。</div>
+        <!-- ✅ 新增到主畫面按鈕：已移除（你要求去掉） -->
       </section>
     </main>
 
-    <!-- Bottom Dock（第三顆改成筆記本；IG 改名追蹤熊熊；不再放新增到主畫面） -->
+    <!-- Bottom Dock：左下角改成配對 -->
     <nav class="dock">
-      <button id="dockHome" class="dock-btn active">🏠 人格</button>
+      <button id="dockPair" class="dock-btn active">🤝 配對</button>
       <a class="dock-btn" href="https://instagram.com/luckygbear" target="_blank" rel="noopener">📷 追蹤熊熊</a>
       <button id="dockNotebook" class="dock-btn">📓 筆記本</button>
     </nav>
@@ -150,24 +116,54 @@
     </div>
   </div>
 
-  <!-- Modal：配對完整內容（✅ 分析後自動跳出） -->
+  <!-- Modal：配對相處指南（✅ Dock 左下角開啟；分析後同視窗顯示結果） -->
   <div id="modalPair" class="modal" aria-hidden="true">
     <div class="modal-backdrop" data-close="1"></div>
     <div class="modal-card" role="dialog" aria-modal="true">
       <div class="modal-head">
-        <div class="modal-title" id="modalPairTitle">配對完整內容</div>
+        <div class="modal-title" id="modalPairTitle">🤝 配對相處指南</div>
         <button class="modal-close" data-close="1">✕</button>
       </div>
+
       <div class="modal-body">
-        <div id="modalPairContent" class="modal-content"></div>
+        <div class="pair-setup card-soft">
+          <div class="row two">
+            <label class="field">
+              <div class="label">你（或 A）</div>
+              <select id="pairA" class="select"></select>
+            </label>
+
+            <label class="field">
+              <div class="label">對方（或 B）</div>
+              <select id="pairB" class="select"></select>
+            </label>
+          </div>
+
+          <div class="row">
+            <label class="field">
+              <div class="label">情境</div>
+              <div class="seg">
+                <button class="seg-btn active" data-mode="work">職場</button>
+                <button class="seg-btn" data-mode="love">親密</button>
+              </div>
+            </label>
+
+            <button id="pairSwapBtn" class="btn">🔁 交換</button>
+            <button id="pairBtn" class="btn primary">分析</button>
+          </div>
+        </div>
+
+        <div class="section-title" style="margin-top:10px;">📌 分析結果</div>
+        <div id="modalPairContent" class="modal-content">請先選擇兩種人格，按「分析」。</div>
       </div>
+
       <div class="modal-foot">
         <button class="btn" data-close="1">關閉</button>
       </div>
     </div>
   </div>
 
-  <!-- Modal：筆記本 -->
+  <!-- Modal：筆記本（✅ 備註 + 分類 + 搜尋/篩選） -->
   <div id="modalNotebook" class="modal" aria-hidden="true">
     <div class="modal-backdrop" data-close="1"></div>
     <div class="modal-card" role="dialog" aria-modal="true">
@@ -177,15 +173,31 @@
       </div>
 
       <div class="modal-body">
-        <div class="note-form">
-          <label class="field">
-            <div class="label">暱稱 / 名字</div>
-            <input id="noteName" class="input" placeholder="例如：媽媽 / 阿哲 / 同事小美" />
-          </label>
+        <div class="note-form card-soft">
+          <div class="row two">
+            <label class="field">
+              <div class="label">暱稱 / 名字</div>
+              <input id="noteName" class="input" placeholder="例如：媽媽 / 阿哲 / 同事小美" />
+            </label>
+
+            <label class="field">
+              <div class="label">分類</div>
+              <select id="noteCategory" class="select">
+                <option value="family">家人</option>
+                <option value="friend">朋友</option>
+                <option value="coworker">同事</option>
+              </select>
+            </label>
+          </div>
 
           <label class="field">
             <div class="label">他/她的 MBTI</div>
             <select id="noteType" class="select"></select>
+          </label>
+
+          <label class="field">
+            <div class="label">備註（相處地雷 / 喜歡的溝通方式 / 你想記的）</div>
+            <textarea id="noteMemo" class="textarea" rows="3" placeholder="例如：不喜歡臨時改時間；喜歡先說結論；需要被肯定…"></textarea>
           </label>
 
           <div class="row">
@@ -197,10 +209,24 @@
           </div>
         </div>
 
-        <div class="note-list-wrap">
-          <div class="section-title">📌 已記錄清單</div>
-          <div id="noteList" class="note-list">尚未新增任何筆記。</div>
+        <div class="note-filter card-soft" style="margin-top:10px;">
+          <div class="row">
+            <label class="field">
+              <div class="label">搜尋（名字 / MBTI / 備註）</div>
+              <input id="noteSearch" class="input" placeholder="輸入關鍵字…" />
+            </label>
+          </div>
+
+          <div class="mini-actions">
+            <button class="chip chip-filter active" data-filter="all">全部</button>
+            <button class="chip chip-filter" data-filter="family">家人</button>
+            <button class="chip chip-filter" data-filter="friend">朋友</button>
+            <button class="chip chip-filter" data-filter="coworker">同事</button>
+          </div>
         </div>
+
+        <div class="section-title" style="margin-top:10px;">📌 已記錄清單</div>
+        <div id="noteList" class="note-list">尚未新增任何筆記。</div>
       </div>
 
       <div class="modal-foot">
