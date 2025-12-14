@@ -14,16 +14,16 @@ body{
   background:var(--bg);
   font-family:"Noto Sans TC",-apple-system,BlinkMacSystemFont,sans-serif;
   color:var(--ink);
-  overflow:hidden; /* ✅ 主畫面不捲動 */
+  overflow-y:auto;
 }
 
 .app-wrap{
   max-width:480px;
   margin:0 auto;
-  height:100vh;                 /* ✅ 固定 1 屏 */
+  min-height:100vh;
   display:flex;
   flex-direction:column;
-  padding:10px 10px 86px;        /* 下面留給 dock */
+  padding:10px 10px 96px; /* 底下留給 dock */
 }
 
 .card{
@@ -34,12 +34,7 @@ body{
   padding:10px 10px 12px;
 }
 
-.topbar{
-  display:flex;
-  flex-direction:column;
-  gap:8px;
-}
-
+.topbar{ display:flex; flex-direction:column; gap:8px; }
 .brand .title{ font-size:18px; font-weight:900; }
 .brand .subtitle{ font-size:12px; color:var(--muted); margin-top:2px; }
 
@@ -79,16 +74,12 @@ body{
 }
 .bubble-tip{ font-size:11px; color:var(--muted); margin-top:6px; }
 
-/* ✅ 主內容用 Grid：塞進 1 屏 */
-.main-grid{
+.main{
   margin-top:10px;
-  display:grid;
-  grid-template-columns: 1fr 1fr;
+  display:flex;
+  flex-direction:column;
   gap:10px;
-  flex:1;
-  min-height:0;
 }
-.span2{ grid-column: span 2; }
 
 .section-title{ font-weight:900; font-size:14px; margin-bottom:8px; }
 
@@ -153,7 +144,7 @@ body{
   font-weight:900;
 }
 
-/* ✅ 配對摘要：不捲動、只顯示前幾行 */
+/* 配對摘要 */
 .pair-summary{
   background:#fff;
   border:2px solid var(--stroke);
@@ -161,10 +152,6 @@ body{
   padding:10px 12px;
   font-size:13px;
   line-height:1.6;
-  display:-webkit-box;
-  -webkit-line-clamp:4;
-  -webkit-box-orient:vertical;
-  overflow:hidden;
 }
 
 /* Dock 固定底部 */
@@ -251,7 +238,7 @@ body{
 
 .modal-body{
   padding:10px 12px;
-  overflow:auto; /* ✅ 彈窗內才允許捲動 */
+  overflow:auto;
 }
 .modal-content{
   background:#fff;
@@ -260,8 +247,21 @@ body{
   padding:12px;
   font-size:13px;
   line-height:1.7;
-  white-space:pre-wrap;
 }
+
+/* 人格 pill */
+.kv{ display:flex; flex-wrap:wrap; gap:8px; margin-bottom:10px; }
+.pill{
+  display:inline-flex;
+  gap:6px;
+  align-items:center;
+  background:#fff;
+  border:2px solid var(--stroke);
+  border-radius:999px;
+  padding:6px 10px;
+  font-size:12px;
+}
+.pill b{ font-weight:900; }
 
 .modal-foot{
   padding:10px 12px;
@@ -270,4 +270,35 @@ body{
   display:flex;
   justify-content:flex-end;
   gap:8px;
+}
+
+/* 筆記本清單 */
+.note-list{
+  background:#fff;
+  border:2px solid var(--stroke);
+  border-radius:16px;
+  padding:10px 12px;
+  font-size:13px;
+  line-height:1.6;
+}
+.note-item{
+  display:flex;
+  align-items:flex-start;
+  justify-content:space-between;
+  gap:10px;
+  padding:10px 0;
+  border-bottom:1px dashed rgba(245,211,166,0.9);
+}
+.note-item:last-child{ border-bottom:none; }
+.note-left{ flex:1; }
+.note-name{ font-weight:900; }
+.note-meta{ color:var(--muted); font-size:12px; margin-top:2px; }
+.note-actions{ display:flex; gap:6px; }
+.note-btn{
+  border:2px solid var(--stroke);
+  background:#fff;
+  border-radius:12px;
+  padding:8px 10px;
+  font-size:12px;
+  cursor:pointer;
 }
