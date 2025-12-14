@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>MBTI熊・冒險者人格圖鑑</title>
+
+  <link rel="manifest" href="./mbti-manifest.webmanifest">
+  <meta name="theme-color" content="#f4a63a" />
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <link rel="apple-touch-icon" href="./icons/icon-192.png">
+
+  <link rel="stylesheet" href="./style.css" />
+</head>
+
+<body>
+  <div class="app-wrap">
+    <!-- Header -->
+    <header class="topbar card">
+      <div class="brand">
+        <div class="title">🐻 MBTI熊・冒險者人格圖鑑</div>
+        <div class="subtitle">查人格｜看職場與親密關係配對｜熊熊提醒</div>
+      </div>
+
+      <div class="mayor">
+        <button id="bearBtn" class="bear-btn" aria-label="點熊熊聽小語">
+          <img class="bear-img" src="./images/bear.png" alt="村長熊熊" />
+        </button>
+
+        <div class="bubble-wrap">
+          <div id="bubble" class="bubble" role="status" aria-live="polite">
+            點一下熊熊，我會問你一個小問題 🫶
+          </div>
+          <div class="bubble-tip">（長按可複製小語）</div>
+        </div>
+      </div>
+    </header>
+
+    <!-- Main -->
+    <main class="main">
+      <!-- Quick Actions -->
+      <section class="card">
+        <div class="section-title">🔎 查詢人格</div>
+
+        <div class="row">
+          <label class="field">
+            <div class="label">輸入 MBTI（例如 INFP）</div>
+            <input id="typeInput" class="input" maxlength="4" placeholder="例如：ENFJ / ISTP" />
+          </label>
+
+          <button id="goTypeBtn" class="btn primary">查看</button>
+        </div>
+
+        <div class="row">
+          <label class="field">
+            <div class="label">或搜尋其他人格</div>
+            <select id="typeSelect" class="select"></select>
+          </label>
+          <button id="randomBtn" class="btn">隨機一種</button>
+        </div>
+
+        <div class="row">
+          <label class="field">
+            <div class="label">MBTI 測驗網站（可改成你想放的連結）</div>
+            <input id="testUrl" class="input" placeholder="貼上測驗網址（例如 16personalities）" />
+          </label>
+          <button id="openTestBtn" class="btn">前往測驗</button>
+        </div>
+
+        <div class="hint">
+          💡 小提醒：MBTI 是「偏好」不是能力高低；用來理解自己與他人，不用來貼標籤。
+        </div>
+      </section>
+
+      <!-- Result -->
+      <section id="resultCard" class="card">
+        <div class="section-title">📘 人格詳細解說</div>
+        <div id="result" class="result">
+          請輸入或選擇一種 MBTI 人格～
+        </div>
+      </section>
+
+      <!-- Pairing -->
+      <section class="card">
+        <div class="section-title">🤝 配對相處指南</div>
+
+        <div class="row two">
+          <label class="field">
+            <div class="label">你（或 A）</div>
+            <select id="pairA" class="select"></select>
+          </label>
+
+          <label class="field">
+            <div class="label">對方（或 B）</div>
+            <select id="pairB" class="select"></select>
+          </label>
+        </div>
+
+        <div class="row">
+          <label class="field">
+            <div class="label">情境</div>
+            <div class="seg">
+              <button class="seg-btn active" data-mode="work">職場</button>
+              <button class="seg-btn" data-mode="love">親密關係</button>
+            </div>
+          </label>
+          <button id="pairBtn" class="btn primary">分析配對</button>
+        </div>
+
+        <div id="pairResult" class="pair-result">
+          選兩種人格後按「分析配對」，我會給你們更融洽的調整方法。
+        </div>
+      </section>
+    </main>
+
+    <!-- Bottom Dock -->
+    <nav class="dock">
+      <button id="dockHome" class="dock-btn active">🏠 人格圖鑑</button>
+      <a class="dock-btn" href="https://instagram.com/luckygbear" target="_blank" rel="noopener">📷 追蹤 @luckygbear</a>
+      <button id="dockInstall" class="dock-btn">➕ 新增到主畫面</button>
+    </nav>
+
+    <div class="safe-space"></div>
+  </div>
+
+  <script src="./app.js"></script>
+</body>
+</html>
