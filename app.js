@@ -1,14 +1,13 @@
 // =========================
-// MBTI熊 - app.js（完整 16 型 + Modal 彈窗版）
+// MBTI熊 - app.js（完整覆蓋）
+// 功能：16型資料、人格Modal、配對分析自動跳Modal、PWA 安裝、熊熊氣泡、筆記本
 // =========================
 
 const DEFAULT_TEST_URL = "https://www.16personalities.com/";
 
-// 熊熊點擊隨機語句/問題
 const BEAR_QUOTES = [
   "🐻 你現在最想被理解的是哪一件事？",
   "🐻 你今天做得最棒的一件小事是什麼？",
-  "🐻 如果把你當成冒險者，你的『補給品』是什麼？（睡眠/朋友/運動/創作…）",
   "🐻 你最近最常卡住的情緒是：焦慮、委屈、生氣、空虛、疲憊，哪一個？",
   "🐻 你希望關係裡更常出現：被肯定、被理解、被尊重、被陪伴？",
   "🐻 不是要變成別人，是把自己用得更順、更舒服。",
@@ -28,8 +27,8 @@ const MBTI = {
     blindspots: ["對變動較焦慮", "容易對標準過嚴", "情緒表達較含蓄"],
     work: ["行政/法務/稽核", "專案管控/PMO", "品質管理/流程改善"],
     workTips: [
-      "先把目標拆成『可檢核里程碑』，你的效率會更恐怖。",
-      "遇到變更別急著否定：先問『風險是什麼？我需要哪些資訊？』",
+      "把目標拆成『可檢核里程碑』，你的效率會更恐怖。",
+      "遇到變更先問：『風險是什麼？我需要哪些資訊？』",
       "給自己留 10% 彈性，不必每件事都做到 100 分才算好。"
     ],
     loveTips: [
@@ -50,7 +49,7 @@ const MBTI = {
     workTips: [
       "先學會說『我需要想一下』，這是溫柔的界線。",
       "把付出可視化：用清單/回報讓價值被看見。",
-      "遇到衝突先寫下需求：我想要什麼？我害怕什麼？"
+      "衝突前先寫下需求：我想要什麼？我害怕什麼？"
     ],
     loveTips: [
       "別只做不說：練習提出需求『我希望你…』",
@@ -288,7 +287,7 @@ const MBTI = {
     blindspots: ["怕被拒絕", "過度付出", "在意他人眼光"],
     work: ["人資/行政", "社群/客戶關係", "教育/服務管理"],
     workTips: [
-      "你的強項是『讓大家更好』，也要為自己保留能量。",
+      "你很會讓大家更好，也要為自己保留能量。",
       "拒絕時給替代方案，不必硬吞。",
       "焦慮時回到事實：我現在能做的一步是？"
     ],
@@ -338,12 +337,7 @@ const MBTI = {
       "用溫度補上效率：確認感受比指令更有效。"
     ],
     bear: "🐻 熊熊提醒：你很會贏，但你也值得被溫柔地愛。"
-  },
-
-  // ✅ 這兩個常被忘記：ESTJ/ESFJ 已有，剩下兩個：ENFP/ENTP 有了
-  // ✅ 下面補齊：ISFP/ISTP/INTP/INFP/INFJ/INTJ/ISFJ/ISTJ 都有
-  // ✅ 還缺：ESFP/ESTP/ENFJ/ENTJ 也都有
-  // ✅ 目前 16 型完整
+  }
 };
 
 // =========================
@@ -366,7 +360,10 @@ const pairSummary = document.getElementById("pairSummary");
 const bearBtn = document.getElementById("bearBtn");
 const bubble = document.getElementById("bubble");
 
-const dockInstall = document.getElementById("dockInstall");
+const installBtn = document.getElementById("installBtn");
+
+// Dock
+const dockNotebook = document.getElementById("dockNotebook");
 
 // Modal：人格
 const modalType = document.getElementById("modalType");
@@ -376,14 +373,20 @@ const openDetailBtn = document.getElementById("openDetailBtn");
 
 // Modal：配對
 const modalPair = document.getElementById("modalPair");
+const modalPairTitle = document.getElementById("modalPairTitle");
 const modalPairContent = document.getElementById("modalPairContent");
-const openPairDetailBtn = document.getElementById("openPairDetailBtn");
+
+// Modal：筆記本
+const modalNotebook = document.getElementById("modalNotebook");
+const noteName = document.getElementById("noteName");
+const noteType = document.getElementById("noteType");
+const noteSaveBtn = document.getElementById("noteSaveBtn");
+const noteList = document.getElementById("noteList");
+const noteClearBtn = document.getElementById("noteClearBtn");
 
 let pairMode = "work";
 let deferredPrompt = null;
-
 let currentType = "INFP";
-let lastPairText = "";
 
 // =========================
 // 初始化下拉
@@ -396,19 +399,17 @@ function fillSelect(sel) {
 fillSelect(typeSelect);
 fillSelect(pairA);
 fillSelect(pairB);
+fillSelect(noteType);
 
 testUrl.value = DEFAULT_TEST_URL;
 
 // =========================
-// 工具：正規化 type
+// 小工具
 // =========================
 function normalizeType(s) {
   return (s || "").trim().toUpperCase().replace(/[^A-Z]/g, "").slice(0, 4);
 }
 
-// =========================
-// Modal 控制
-// =========================
 function openModal(el) {
   el.classList.add("show");
   el.setAttribute("aria-hidden", "false");
@@ -418,10 +419,12 @@ function closeModal(el) {
   el.setAttribute("aria-hidden", "true");
 }
 
+// 點遮罩或 X 或 footer 關閉
 document.querySelectorAll("[data-close='1']").forEach(btn => {
   btn.addEventListener("click", () => {
     closeModal(modalType);
     closeModal(modalPair);
+    closeModal(modalNotebook);
   });
 });
 
@@ -429,15 +432,15 @@ window.addEventListener("keydown", (e) => {
   if (e.key === "Escape") {
     closeModal(modalType);
     closeModal(modalPair);
+    closeModal(modalNotebook);
   }
 });
 
 // =========================
-// 人格內容：建 HTML（✅ 必須用 innerHTML 才不會顯示 <div> 文字）
+// 人格內容：建 HTML（✅ 用 innerHTML 渲染）
 // =========================
 function buildTypeHtml(t) {
   const d = MBTI[t];
-
   const pills = [
     `<span class="pill"><b>${t}</b>｜${d.name}</span>`,
     ...(d.tags || []).map(x => `<span class="pill">✨ ${x}</span>`)
@@ -477,15 +480,17 @@ function setCurrentType(t) {
 
 // =========================
 // 查詢人格
+// ✅ 「查看」按鈕：直接開人格詳細解說
 // =========================
 goTypeBtn.addEventListener("click", () => {
   const t = normalizeType(typeInput.value) || typeSelect.value;
-  if (MBTI[t]) setCurrentType(t);
+  if (MBTI[t]) {
+    setCurrentType(t);
+    openModal(modalType); // ✅ 按查看就開彈窗
+  }
 });
 
-typeSelect.addEventListener("change", () => {
-  setCurrentType(typeSelect.value);
-});
+typeSelect.addEventListener("change", () => setCurrentType(typeSelect.value));
 
 typeInput.addEventListener("keydown", (e) => {
   if (e.key === "Enter") goTypeBtn.click();
@@ -494,12 +499,11 @@ typeInput.addEventListener("keydown", (e) => {
 randomBtn.addEventListener("click", () => {
   const t = TYPES[Math.floor(Math.random() * TYPES.length)];
   setCurrentType(t);
+  openModal(modalType); // 隨機也直接開彈窗（更像抽卡）
 });
 
-// 人格詳細解說彈窗
-openDetailBtn.addEventListener("click", () => {
-  openModal(modalType);
-});
+// 手動按「開啟人格詳細解說」
+openDetailBtn.addEventListener("click", () => openModal(modalType));
 
 // =========================
 // 測驗入口
@@ -514,7 +518,7 @@ openTestBtn.addEventListener("click", () => {
 });
 
 // 複製目前人格
-copyTypeBtn?.addEventListener("click", async () => {
+copyTypeBtn.addEventListener("click", async () => {
   try {
     await navigator.clipboard.writeText(currentType);
     bubble.textContent = `✅ 已複製：${currentType}（可貼給朋友做配對）`;
@@ -522,14 +526,14 @@ copyTypeBtn?.addEventListener("click", async () => {
 });
 
 // 交換配對
-swapPairBtn?.addEventListener("click", () => {
+swapPairBtn.addEventListener("click", () => {
   const a = pairA.value;
   pairA.value = pairB.value;
   pairB.value = a;
 });
 
 // =========================
-// 熊熊氣泡
+// 熊熊氣泡（點熊熊 + 長按複製）
 // =========================
 function randomBearLine() {
   return BEAR_QUOTES[Math.floor(Math.random() * BEAR_QUOTES.length)];
@@ -539,7 +543,6 @@ bearBtn.addEventListener("click", () => {
   bubble.textContent = randomBearLine();
 });
 
-// 長按複製氣泡
 bubble.addEventListener("pointerdown", () => {
   const timer = setTimeout(async () => {
     try {
@@ -559,7 +562,7 @@ bubble.addEventListener("pointerdown", () => {
 });
 
 // =========================
-// 配對分析
+// 配對分析：按分析後直接跳出視窗完整內容 ✅
 // =========================
 function diffLetters(a, b) {
   const pairs = [
@@ -602,34 +605,18 @@ function pairingAdvice(a, b, mode) {
 
   if (mode === "work") {
     lines.push(`\n【職場相處怎麼更順】`);
-    if (diffs.some(x => x.label.includes("資訊偏好"))) {
-      lines.push(`- 一位愛細節、一位愛方向：先定義『成果長什麼樣』再分工（框架/細節）。`);
-    }
-    if (diffs.some(x => x.label.includes("決策偏好"))) {
-      lines.push(`- 一位重邏輯、一位重感受：先講『事實與選項』再講『影響到誰』。`);
-    }
-    if (diffs.some(x => x.label.includes("生活節奏"))) {
-      lines.push(`- 一位愛計畫、一位愛彈性：用『最小必要規則』（截止日/責任人），其他給自由。`);
-    }
-    if (diffs.some(x => x.label.includes("能量來源"))) {
-      lines.push(`- 一位需要討論、一位需要獨處：先給時間想，再約固定對齊點。`);
-    }
-    lines.push(`- 熊熊小招：先問一句「你想先談方向還是先對細節？」`);
+    if (diffs.some(x => x.label.includes("資訊偏好"))) lines.push(`- 先定義成果，再分工（框架/細節）。`);
+    if (diffs.some(x => x.label.includes("決策偏好"))) lines.push(`- 先講事實與選項，再談感受與影響。`);
+    if (diffs.some(x => x.label.includes("生活節奏"))) lines.push(`- 用最小必要規則（截止日/責任人），其他給彈性。`);
+    if (diffs.some(x => x.label.includes("能量來源"))) lines.push(`- 先給時間想，再約固定對齊點（避免即席逼迫）。`);
+    lines.push(`- 熊熊小招：先問「你想先談方向還是先對細節？」`);
   } else {
     lines.push(`\n【親密關係怎麼更靠近】`);
-    if (diffs.some(x => x.label.includes("能量來源"))) {
-      lines.push(`- 外向要互動、內向要充電：建立可預期節奏（相處＋各自時間都要）。`);
-    }
-    if (diffs.some(x => x.label.includes("決策偏好"))) {
-      lines.push(`- 衝突順序：先安撫 → 再討論 → 再行動（先被理解才談解法）。`);
-    }
-    if (diffs.some(x => x.label.includes("生活節奏"))) {
-      lines.push(`- 計畫派要承諾、彈性派要自由：用『約定』取代『控制』。`);
-    }
-    if (diffs.some(x => x.label.includes("資訊偏好"))) {
-      lines.push(`- 細節派要踏實、直覺派要願景：一個說『我需要什麼』一個說『我想去哪裡』。`);
-    }
-    lines.push(`- 熊熊小招：每天一句確認「我今天最需要的是陪伴/空間/肯定/理解？」`);
+    if (diffs.some(x => x.label.includes("能量來源"))) lines.push(`- 建立可預期節奏：相處＋各自充電都要有。`);
+    if (diffs.some(x => x.label.includes("決策偏好"))) lines.push(`- 衝突順序：先安撫 → 再討論 → 再行動。`);
+    if (diffs.some(x => x.label.includes("生活節奏"))) lines.push(`- 用約定取代控制：回訊/重要日子/底線講清楚。`);
+    if (diffs.some(x => x.label.includes("資訊偏好"))) lines.push(`- 一個講需要、一個講願景：兩個都講才安全。`);
+    lines.push(`- 熊熊小招：每天一句「我今天最需要陪伴/空間/肯定/理解？」`);
   }
 
   lines.push(`\n🐻 熊熊提醒：相容不是天生，是一起練出來的默契。`);
@@ -640,23 +627,14 @@ pairBtn.addEventListener("click", () => {
   const a = pairA.value;
   const b = pairB.value;
 
-  lastPairText = pairingAdvice(a, b, pairMode);
+  const full = pairingAdvice(a, b, pairMode);
 
-  // 主畫面只顯示摘要（前 6 行）
-  const summary = lastPairText.split("\n").slice(0, 6).join("\n");
-  pairSummary.textContent = summary + "\n…（點下面看完整）";
+  pairSummary.textContent = full.split("\n").slice(0, 4).join("\n") + "\n…（已在視窗顯示完整內容）";
 
-  // 彈窗完整內容
-  modalPairContent.textContent = lastPairText;
-});
+  modalPairTitle.textContent = `🤝 ${a} × ${b}（${pairMode === "work" ? "職場" : "親密"}）`;
+  modalPairContent.textContent = full;
 
-// 開啟配對完整內容彈窗
-openPairDetailBtn.addEventListener("click", () => {
-  if (!lastPairText) {
-    alert("請先按「分析」產生配對內容");
-    return;
-  }
-  openModal(modalPair);
+  openModal(modalPair); // ✅ 直接跳出完整視窗
 });
 
 // 切換職場/親密
@@ -669,15 +647,16 @@ document.querySelectorAll(".seg-btn").forEach(btn => {
 });
 
 // =========================
-// PWA 安裝（Android 常用）
+// PWA 安裝（新增到主畫面）
+// ✅ 按鈕已移到「測驗入口」底下
 // =========================
 window.addEventListener("beforeinstallprompt", (e) => {
   e.preventDefault();
   deferredPrompt = e;
-  dockInstall.textContent = "➕ 新增到主畫面";
+  installBtn.textContent = "➕ 新增到主畫面";
 });
 
-dockInstall.addEventListener("click", async () => {
+installBtn.addEventListener("click", async () => {
   if (!deferredPrompt) {
     alert("iPhone：Safari → 分享 → 加到主畫面。\nAndroid：右上角選單可安裝 / 或會跳出安裝提示。");
     return;
@@ -685,7 +664,7 @@ dockInstall.addEventListener("click", async () => {
   deferredPrompt.prompt();
   const choice = await deferredPrompt.userChoice;
   deferredPrompt = null;
-  dockInstall.textContent = choice?.outcome === "accepted" ? "✅ 已加入" : "➕ 新增到主畫面";
+  installBtn.textContent = choice?.outcome === "accepted" ? "✅ 已加入" : "➕ 新增到主畫面";
 });
 
 // =========================
@@ -698,8 +677,118 @@ if ("serviceWorker" in navigator) {
 }
 
 // =========================
+// 筆記本（localStorage）
+// =========================
+const NOTE_KEY = "mbtiBearNotes_v1";
+
+function loadNotes() {
+  try {
+    return JSON.parse(localStorage.getItem(NOTE_KEY) || "[]");
+  } catch {
+    return [];
+  }
+}
+function saveNotes(arr) {
+  localStorage.setItem(NOTE_KEY, JSON.stringify(arr));
+}
+
+function renderNotes() {
+  const notes = loadNotes();
+  if (!notes.length) {
+    noteList.textContent = "尚未新增任何筆記。";
+    return;
+  }
+
+  noteList.innerHTML = notes.map((n, idx) => {
+    const label = `${n.type}｜${MBTI[n.type]?.name || ""}`;
+    return `
+      <div class="note-item">
+        <div class="note-left">
+          <div class="note-name">${escapeHtml(n.name)}</div>
+          <div class="note-meta">${escapeHtml(label)} ・ ${escapeHtml(n.time)}</div>
+        </div>
+        <div class="note-actions">
+          <button class="note-btn" data-note-open="${idx}">查看</button>
+          <button class="note-btn" data-note-del="${idx}">刪除</button>
+        </div>
+      </div>
+    `;
+  }).join("");
+
+  // 綁定按鈕
+  noteList.querySelectorAll("[data-note-open]").forEach(btn => {
+    btn.addEventListener("click", () => {
+      const i = Number(btn.getAttribute("data-note-open"));
+      const notes = loadNotes();
+      const n = notes[i];
+      if (!n) return;
+      setCurrentType(n.type);
+      openModal(modalType);
+    });
+  });
+
+  noteList.querySelectorAll("[data-note-del]").forEach(btn => {
+    btn.addEventListener("click", () => {
+      const i = Number(btn.getAttribute("data-note-del"));
+      const notes = loadNotes();
+      notes.splice(i, 1);
+      saveNotes(notes);
+      renderNotes();
+    });
+  });
+}
+
+function escapeHtml(s) {
+  return String(s || "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
+}
+
+dockNotebook.addEventListener("click", () => {
+  renderNotes();
+  openModal(modalNotebook);
+});
+
+noteSaveBtn.addEventListener("click", () => {
+  const name = (noteName.value || "").trim();
+  const type = noteType.value;
+
+  if (!name) {
+    alert("請先輸入暱稱或名字");
+    return;
+  }
+  if (!MBTI[type]) {
+    alert("請選擇有效的 MBTI");
+    return;
+  }
+
+  const notes = loadNotes();
+  const now = new Date();
+  const time = `${now.getFullYear()}/${String(now.getMonth()+1).padStart(2,"0")}/${String(now.getDate()).padStart(2,"0")} ${String(now.getHours()).padStart(2,"0")}:${String(now.getMinutes()).padStart(2,"0")}`;
+
+  notes.unshift({ name, type, time });
+  saveNotes(notes);
+
+  noteName.value = "";
+  noteType.value = type; // 留著
+  renderNotes();
+});
+
+noteClearBtn.addEventListener("click", () => {
+  if (!confirm("確定要清空全部筆記嗎？")) return;
+  saveNotes([]);
+  renderNotes();
+});
+
+// =========================
 // 初始狀態
 // =========================
 setCurrentType("INFP");
 typeSelect.value = "INFP";
 typeInput.value = "INFP";
+pairA.value = "ENFJ";
+pairB.value = "ENFJ";
+bubble.textContent = randomBearLine();
