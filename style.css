@@ -7,7 +7,6 @@
   --shadow:0 8px 18px rgba(0,0,0,0.14);
 }
 
-/* ================= 基本重置 ================= */
 *{ box-sizing:border-box; }
 html,body{ height:100%; margin:0; padding:0; }
 body{
@@ -17,7 +16,6 @@ body{
   overflow-y:auto;
 }
 
-/* ================= App 容器 ================= */
 .app-wrap{
   max-width:480px;
   margin:0 auto;
@@ -27,7 +25,6 @@ body{
   padding:10px 10px 96px;
 }
 
-/* ================= 卡片 ================= */
 .card{
   background:var(--card);
   border:2px solid var(--stroke);
@@ -35,6 +32,7 @@ body{
   box-shadow:var(--shadow);
   padding:10px 10px 12px;
 }
+
 .card-soft{
   background:#fff;
   border:2px solid var(--stroke);
@@ -42,7 +40,6 @@ body{
   padding:10px;
 }
 
-/* ================= Header ================= */
 .topbar{ display:flex; flex-direction:column; gap:8px; }
 .brand .title{ font-size:18px; font-weight:900; }
 .brand .subtitle{ font-size:12px; color:var(--muted); margin-top:2px; }
@@ -55,7 +52,6 @@ body{
   box-shadow:0 6px 14px rgba(0,0,0,0.12);
 }
 
-/* ================= 熊熊氣泡 ================= */
 .bubble-wrap{ flex:1; }
 .bubble{
   background:#fff;
@@ -84,7 +80,6 @@ body{
 }
 .bubble-tip{ font-size:11px; color:var(--muted); margin-top:6px; }
 
-/* ================= Main ================= */
 .main{
   margin-top:10px;
   display:flex;
@@ -94,7 +89,6 @@ body{
 
 .section-title{ font-weight:900; font-size:14px; margin-bottom:8px; }
 
-/* ================= 表單 ================= */
 .row{ display:flex; gap:8px; align-items:flex-end; margin-bottom:8px; }
 .row.two > *{ flex:1; }
 .field{ flex:1; }
@@ -112,7 +106,6 @@ body{
 }
 .textarea{ resize:vertical; }
 
-/* ================= 按鈕 ================= */
 .btn{
   border:2px solid var(--stroke);
   background:#fff;
@@ -129,17 +122,9 @@ body{
 }
 .btn.wide{ width:100%; }
 
-/* ================= 提示 ================= */
-.hint{
-  background:#fff;
-  border:2px dashed var(--stroke);
-  border-radius:14px;
-  padding:10px 12px;
-  color:var(--muted);
-}
+.hint{ background:#fff; border:2px dashed var(--stroke); border-radius:14px; padding:10px 12px; color:var(--muted); }
 .hint.small{ font-size:12px; padding:8px 10px; }
 
-/* ================= Chip / Seg ================= */
 .mini-actions{ display:flex; gap:8px; flex-wrap:wrap; margin-top:8px; }
 .chip{
   border:2px solid var(--stroke);
@@ -171,7 +156,7 @@ body{
   font-weight:900;
 }
 
-/* ================= Dock ================= */
+/* Dock */
 .dock{
   position:fixed;
   left:50%;
@@ -184,7 +169,6 @@ body{
   background:rgba(255,238,201,0.92);
   backdrop-filter:blur(8px);
   border-top:2px solid rgba(245,211,166,0.9);
-  z-index:20;
 }
 .dock-btn{
   flex:1;
@@ -203,28 +187,10 @@ body{
   font-weight:900;
 }
 
-/* ================= Modal（關鍵修正區） ================= */
-.modal{
-  position:fixed;
-  inset:0;
-  display:none;
-  z-index:50;
-}
-
-/* 原本 show */
+/* Modal */
+.modal{ position:fixed; inset:0; display:none; z-index:50; }
 .modal.show{ display:block; }
-
-/* ✅ 兼容 app.js 使用 open */
-.modal.open{ display:block; }
-
-/* 背景 */
-.modal-backdrop{
-  position:absolute;
-  inset:0;
-  background:rgba(0,0,0,0.35);
-}
-
-/* 卡片 */
+.modal-backdrop{ position:absolute; inset:0; background:rgba(0,0,0,0.35); }
 .modal-card{
   position:absolute;
   left:50%;
@@ -240,8 +206,6 @@ body{
   flex-direction:column;
   overflow:hidden;
 }
-
-/* Header */
 .modal-head{
   padding:10px 12px;
   background:#fff;
@@ -259,13 +223,7 @@ body{
   height:34px;
   cursor:pointer;
 }
-
-/* 內容 */
-.modal-body{
-  padding:10px 12px;
-  overflow:auto;
-  -webkit-overflow-scrolling:touch;
-}
+.modal-body{ padding:10px 12px; overflow:auto; }
 .modal-content{
   background:#fff;
   border:2px solid var(--stroke);
@@ -275,8 +233,6 @@ body{
   line-height:1.7;
   white-space:pre-wrap;
 }
-
-/* Footer */
 .modal-foot{
   padding:10px 12px;
   background:#fff;
@@ -286,10 +242,21 @@ body{
   gap:8px;
 }
 
-/* 開 modal 時鎖背景 */
-body.modal-open{ overflow:hidden; }
+/* pills */
+.kv{ display:flex; flex-wrap:wrap; gap:8px; margin-bottom:10px; }
+.pill{
+  display:inline-flex;
+  gap:6px;
+  align-items:center;
+  background:#fff;
+  border:2px solid var(--stroke);
+  border-radius:999px;
+  padding:6px 10px;
+  font-size:12px;
+}
+.pill b{ font-weight:900; }
 
-/* ================= Notebook ================= */
+/* Notebook list */
 .note-list{
   background:#fff;
   border:2px solid var(--stroke);
