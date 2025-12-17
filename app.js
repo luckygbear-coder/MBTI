@@ -1,1156 +1,720 @@
-/* =========================================================
-   MBTI熊｜app.js（對應你提供的 index.html）
-   - 讀取 ./data/mbti.json
-   - 人格查詢 / 隨機 / 詳細解說（Modal）
-   - 配對分析（職場/親密）+ 行動清單（3條）+ 一鍵存筆記本
-   - 筆記本：新增人物 / 生成溝通建議 / 搜尋&分類 / 匯出匯入 / 清空
-   - 熊熊小語：點頭像換句、長按複製
-   ========================================================= */
+// =========================
+// MBTI熊 - app.js（vNext+）
+// ✅ 人格 JSON: landmines 相處地雷
+// ✅ 配對結果一鍵存筆記本
+// ✅ 筆記 JSON 匯出/匯入
+// ✅ 筆記增加星座欄位
+// ✅ 人物筆記：一鍵生成溝通建議（landmines + loveTips/workTips）
+// ✅ 配對：一鍵產生相處行動清單（3條）
+// =========================
 
-(() => {
-  "use strict";
+const DEFAULT_TEST_URL = "https://www.16personalities.com/";
+const MBTI_JSON_URL = "./data/mbti.json";
 
-  /* ----------------------------
-   * DOM helpers
-   * ---------------------------- */
-  const $ = (sel, root = document) => root.querySelector(sel);
-  const $$ = (sel, root = document) => Array.from(root.querySelectorAll(sel));
+const BEAR_QUOTES = [
+  "🐻 你現在最想被理解的是哪一件事？",
+  "🐻 你今天做得最棒的一件小事是什麼？",
+  "🐻 如果今天只能照顧自己 1%，你想先照顧哪裡？",
+  "🐻 你最希望別人怎麼跟你說話，才會覺得被尊重？",
+  "🐻 衝突前先問：我想被理解的是什麼？",
+  "🐻 不是要變成別人，是把自己用得更順、更舒服。",
+  "🐻 先把心放回身體裡：喝水、深呼吸、再說話。"
+];
 
-  const clamp = (n, a, b) => Math.max(a, Math.min(b, n));
-  const nowISO = () => new Date().toISOString();
+let MBTI = {};
+let TYPES = [];
+let currentType = "INFP";
+let pairMode = "work";
+let lastPairText = "";
+let lastPairMeta = null;
+let lastPairActions = "";
 
-  /* ----------------------------
-   * LocalStorage
-   * ---------------------------- */
-  const LS = {
-    lastType: "mbtiBear:lastType",
-    testUrl: "mbtiBear:testUrl",
-    notebook: "mbtiBear:notebook", // { people:[], pairs:[] }
+// ====== UI ======
+const typeInput = document.getElementById("typeInput");
+const goTypeBtn = document.getElementById("goTypeBtn");
+const typeSelect = document.getElementById("typeSelect");
+const randomBtn = document.getElementById("randomBtn");
+const testUrl = document.getElementById("testUrl");
+const openTestBtn = document.getElementById("openTestBtn");
+const copyTypeBtn = document.getElementById("copyTypeBtn");
+
+const bearBtn = document.getElementById("bearBtn");
+const bubble = document.getElementById("bubble");
+
+const dockPair = document.getElementById("dockPair");
+const dockNotebook = document.getElementById("dockNotebook");
+
+const modalType = document.getElementById("modalType");
+const modalTypeTitle = document.getElementById("modalTypeTitle");
+const modalTypeContent = document.getElementById("modalTypeContent");
+const openDetailBtn = document.getElementById("openDetailBtn");
+
+const modalPair = document.getElementById("modalPair");
+const modalPairTitle = document.getElementById("modalPairTitle");
+const modalPairContent = document.getElementById("modalPairContent");
+const pairA = document.getElementById("pairA");
+const pairB = document.getElementById("pairB");
+const pairBtn = document.getElementById("pairBtn");
+const pairSwapBtn = document.getElementById("pairSwapBtn");
+const pairSaveBtn = document.getElementById("pairSaveBtn");
+const pairActionBtn = document.getElementById("pairActionBtn");
+
+const modalNotebook = document.getElementById("modalNotebook");
+const noteName = document.getElementById("noteName");
+const noteCategory = document.getElementById("noteCategory");
+const noteType = document.getElementById("noteType");
+const noteZodiac = document.getElementById("noteZodiac");
+const noteMemo = document.getElementById("noteMemo");
+const noteAdviceBtn = document.getElementById("noteAdviceBtn");
+const noteSaveBtn = document.getElementById("noteSaveBtn");
+const noteList = document.getElementById("noteList");
+const noteClearBtn = document.getElementById("noteClearBtn");
+const noteSearch = document.getElementById("noteSearch");
+
+const noteExportBtn = document.getElementById("noteExportBtn");
+const noteImportBtn = document.getElementById("noteImportBtn");
+const noteImportFile = document.getElementById("noteImportFile");
+const noteImportText = document.getElementById("noteImportText");
+const noteImportTextBtn = document.getElementById("noteImportTextBtn");
+
+// ====== Modal helpers ======
+function openModal(el){ el.classList.add("show"); el.setAttribute("aria-hidden","false"); }
+function closeModal(el){ el.classList.remove("show"); el.setAttribute("aria-hidden","true"); }
+
+document.querySelectorAll("[data-close='1']").forEach(btn=>{
+  btn.addEventListener("click", ()=>{
+    closeModal(modalType);
+    closeModal(modalPair);
+    closeModal(modalNotebook);
+  });
+});
+
+window.addEventListener("keydown",(e)=>{
+  if(e.key==="Escape"){
+    closeModal(modalType);
+    closeModal(modalPair);
+    closeModal(modalNotebook);
+  }
+});
+
+// ====== Utils ======
+function normalizeType(s){ return (s||"").trim().toUpperCase().replace(/[^A-Z]/g,"").slice(0,4); }
+function randomBearLine(){ return BEAR_QUOTES[Math.floor(Math.random()*BEAR_QUOTES.length)]; }
+function escapeHtml(s){
+  return String(s||"")
+    .replaceAll("&","&amp;")
+    .replaceAll("<","&lt;")
+    .replaceAll(">","&gt;")
+    .replaceAll('"',"&quot;")
+    .replaceAll("'","&#039;");
+}
+function categoryLabel(v){
+  if(v==="family") return "家人";
+  if(v==="friend") return "朋友";
+  if(v==="coworker") return "同事";
+  return "未分類";
+}
+function nowStamp(){
+  const now = new Date();
+  return `${now.getFullYear()}/${String(now.getMonth()+1).padStart(2,"0")}/${String(now.getDate()).padStart(2,"0")} ${String(now.getHours()).padStart(2,"0")}:${String(now.getMinutes()).padStart(2,"0")}`;
+}
+function uid(){ return `${Date.now()}_${Math.random().toString(16).slice(2)}`; }
+
+// ====== Render MBTI detail ======
+function buildTypeHtml(t){
+  const d = MBTI[t];
+  if(!d) return "找不到此人格資料。";
+  const pills = [
+    `<span class="pill"><b>${t}</b>｜${escapeHtml(d.name)}</span>`,
+    ...(d.tags || []).map(x => `<span class="pill">✨ ${escapeHtml(x)}</span>`)
+  ].join("");
+  const toList = (arr) => (arr && arr.length) ? `- ${arr.join("<br>- ")}` : "-（待補）";
+  return `
+<div class="kv">${pills}</div>
+
+<b>人格特質：</b> ${escapeHtml(d.traits)}<br><br>
+
+<b>優勢：</b><br>${toList((d.strengths||[]).map(escapeHtml))}<br><br>
+
+<b>可能盲點：</b><br>${toList((d.blindspots||[]).map(escapeHtml))}<br><br>
+
+<b>⭐ 相處地雷（請溫柔避開）：</b><br>${toList((d.landmines||[]).map(escapeHtml))}<br><br>
+
+<b>適合工作/領域：</b><br>${toList((d.work||[]).map(escapeHtml))}<br><br>
+
+<b>職場提醒：</b><br>${toList((d.workTips||[]).map(escapeHtml))}<br><br>
+
+<b>親密關係建議：</b><br>${toList((d.loveTips||[]).map(escapeHtml))}<br><br>
+
+<b>熊熊提醒：</b><br>${escapeHtml(d.bear)}
+`.trim();
+}
+
+function setCurrentType(t){
+  if(!MBTI[t]) return;
+  currentType = t;
+  typeSelect.value = t;
+  typeInput.value = t;
+  modalTypeTitle.textContent = `📘 ${t}｜${MBTI[t].name}`;
+  modalTypeContent.innerHTML = buildTypeHtml(t);
+}
+
+// ====== Select init ======
+function fillSelect(sel){
+  sel.innerHTML = TYPES.map(t => `<option value="${t}">${t}｜${escapeHtml(MBTI[t].name)}</option>`).join("");
+}
+
+// ====== Pairing logic ======
+function diffLetters(a,b){
+  const pairs = [
+    ["E","I","能量來源（外向/內向）"],
+    ["S","N","資訊偏好（細節/可能性）"],
+    ["T","F","決策偏好（邏輯/感受）"],
+    ["J","P","生活節奏（計畫/彈性）"]
+  ];
+  const diffs=[];
+  for(const [x,y,label] of pairs){
+    const ia = a.includes(x)?x:y;
+    const ib = b.includes(x)?x:y;
+    if(ia!==ib) diffs.push({label,a:ia,b:ib});
+  }
+  return diffs;
+}
+
+function pairingAdvice(a,b,mode){
+  const diffs = diffLetters(a,b);
+  const sameCount = 4 - diffs.length;
+
+  const scoreWord =
+    sameCount===4 ? "默契很高" :
+    sameCount===3 ? "默契偏高" :
+    sameCount===2 ? "互補型" :
+    sameCount===1 ? "差異很大但可互補" :
+    "完全互補（需要刻意練習）";
+
+  let lines=[];
+  lines.push(`A：${a}｜${MBTI[a].name}`);
+  lines.push(`B：${b}｜${MBTI[b].name}`);
+  lines.push(`\n整體感覺：${scoreWord}`);
+  lines.push(`差異點：${diffs.length ? "" : "幾乎同頻"}`);
+  if(diffs.length){
+    for(const d of diffs){
+      lines.push(`- ${d.label}：A(${d.a}) vs B(${d.b})`);
+    }
+  }
+
+  if(mode==="work"){
+    lines.push(`\n【職場相處怎麼更順】`);
+    if(diffs.some(x=>x.label.includes("資訊偏好"))) lines.push(`- 先定義成果，再分工（框架/細節）。`);
+    if(diffs.some(x=>x.label.includes("決策偏好"))) lines.push(`- 先講事實與選項，再談感受與影響。`);
+    if(diffs.some(x=>x.label.includes("生活節奏"))) lines.push(`- 用最小必要規則（截止日/責任人），其他給彈性。`);
+    if(diffs.some(x=>x.label.includes("能量來源"))) lines.push(`- 先給時間想，再約固定對齊點（避免即席逼迫）。`);
+    lines.push(`- 熊熊小招：先問「你想先談方向還是先對細節？」`);
+  }else{
+    lines.push(`\n【親密關係怎麼更靠近】`);
+    if(diffs.some(x=>x.label.includes("能量來源"))) lines.push(`- 建立可預期節奏：相處＋各自充電都要有。`);
+    if(diffs.some(x=>x.label.includes("決策偏好"))) lines.push(`- 衝突順序：先安撫 → 再討論 → 再行動。`);
+    if(diffs.some(x=>x.label.includes("生活節奏"))) lines.push(`- 用約定取代控制：回訊/重要日子/底線講清楚。`);
+    if(diffs.some(x=>x.label.includes("資訊偏好"))) lines.push(`- 一個講需要、一個講願景：兩個都講才安全。`);
+    lines.push(`- 熊熊小招：每天一句「我今天最需要陪伴/空間/肯定/理解？」`);
+  }
+  lines.push(`\n🐻 熊熊提醒：相容不是天生，是一起練出來的默契。`);
+  return lines.join("\n");
+}
+
+// ✅ 生成相處行動清單（3條）
+function buildPairActions(a,b,mode){
+  const A = MBTI[a] || {};
+  const B = MBTI[b] || {};
+  const diffs = diffLetters(a,b);
+
+  const pick = (arr, i) => (arr && arr.length) ? arr[i % arr.length] : "";
+  const pickLandmine = (d, i) => pick(d.landmines || [], i);
+  const pickTip = (d, i, mode) => {
+    const source = mode === "work" ? (d.workTips || []) : (d.loveTips || []);
+    return pick(source, i);
   };
 
-  const safeParse = (s, fallback) => {
-    try {
-      const v = JSON.parse(s);
-      return v ?? fallback;
-    } catch {
-      return fallback;
+  // 1) 避地雷（從雙方 landmines 各挑 1 句，拼成可執行）
+  const lmA = pickLandmine(A, 0);
+  const lmB = pickLandmine(B, 0);
+  const act1 = `1) 先避雷：跟 ${a} 相處先避開「${lmA || "過度逼迫/否定"}」；跟 ${b} 相處先避開「${lmB || "過度逼迫/否定"}」。`;
+
+  // 2) 用一句話的溝通方式（從 tips 各挑 1 句，合併成共識）
+  const tipA = pickTip(A, 0, mode);
+  const tipB = pickTip(B, 0, mode);
+  const act2 = `2) 溝通方式：先用 ${mode==="work" ? "成果/結論" : "安撫/確認"} 開場，再補細節。A 記得：${tipA || "先講結論再補充"}；B 記得：${tipB || "先回應感受再討論"}。`;
+
+  // 3) 建立一個「小規則」（依差異自動給）
+  let act3 = "";
+  if(mode==="work"){
+    if(diffs.some(x=>x.label.includes("生活節奏"))){
+      act3 = "3) 合作小規則：所有任務先定『截止日＋責任人』，其餘讓各自用舒服的方式完成。";
+    }else if(diffs.some(x=>x.label.includes("資訊偏好"))){
+      act3 = "3) 合作小規則：每次討論固定三段：目標(1句)→選項(最多3個)→下一步(誰做/何時交)。";
+    }else{
+      act3 = "3) 合作小規則：每週 10 分鐘對齊：本週最重要 1 件事＋卡住點 1 件事。";
     }
-  };
-
-  const loadLS = (k, fallback) => safeParse(localStorage.getItem(k), fallback);
-  const saveLS = (k, v) => localStorage.setItem(k, JSON.stringify(v));
-
-  /* ----------------------------
-   * Clipboard
-   * ---------------------------- */
-  async function copyText(text) {
-    try {
-      await navigator.clipboard.writeText(text);
-      toast("✅ 已複製到剪貼簿");
-      return true;
-    } catch {
-      // fallback
-      const ta = document.createElement("textarea");
-      ta.value = text;
-      ta.style.position = "fixed";
-      ta.style.left = "-9999px";
-      document.body.appendChild(ta);
-      ta.select();
-      try {
-        document.execCommand("copy");
-        toast("✅ 已複製到剪貼簿");
-        return true;
-      } catch {
-        toast("⚠️ 複製失敗，請手動複製");
-        return false;
-      } finally {
-        document.body.removeChild(ta);
-      }
+  }else{
+    if(diffs.some(x=>x.label.includes("能量來源"))){
+      act3 = "3) 關係小規則：固定『相處日』＋『各自充電日』，避免用猜的造成誤會。";
+    }else if(diffs.some(x=>x.label.includes("決策偏好"))){
+      act3 = "3) 關係小規則：衝突三步驟：先抱抱/安撫 → 再講需求 → 再定一個小改變。";
+    }else{
+      act3 = "3) 關係小規則：每天一句確認：『你今天最需要我做什麼？』";
     }
   }
 
-  /* ----------------------------
-   * Toast（如果你 style.css 沒有 #toast，會自動建立）
-   * ---------------------------- */
-  let toastTimer = null;
-  function ensureToast() {
-    let el = $("#toast");
-    if (el) return el;
-    el = document.createElement("div");
-    el.id = "toast";
-    el.style.position = "fixed";
-    el.style.left = "50%";
-    el.style.bottom = "84px";
-    el.style.transform = "translateX(-50%)";
-    el.style.padding = "10px 12px";
-    el.style.borderRadius = "999px";
-    el.style.background = "rgba(0,0,0,0.75)";
-    el.style.color = "#fff";
-    el.style.fontSize = "13px";
-    el.style.zIndex = "9999";
-    el.style.opacity = "0";
-    el.style.pointerEvents = "none";
-    el.style.transition = "opacity .18s ease";
-    document.body.appendChild(el);
-    return el;
+  return [act1, act2, act3].join("\n");
+}
+
+// ====== Notebook storage ======
+const NOTE_KEY = "mbtiBearNotes_v3";
+let noteFilter = "all";
+
+function loadNotes(){
+  try{
+    const arr = JSON.parse(localStorage.getItem(NOTE_KEY) || "[]");
+    return Array.isArray(arr) ? arr : [];
+  }catch{
+    return [];
   }
-  function toast(msg) {
-    const el = ensureToast();
-    el.textContent = msg;
-    el.style.opacity = "1";
-    clearTimeout(toastTimer);
-    toastTimer = setTimeout(() => (el.style.opacity = "0"), 1500);
+}
+function saveNotes(arr){ localStorage.setItem(NOTE_KEY, JSON.stringify(arr)); }
+
+function renderNotes(){
+  const kw = (noteSearch.value || "").trim().toLowerCase();
+  let notes = loadNotes();
+
+  if(noteFilter !== "all") notes = notes.filter(n => n.category === noteFilter);
+  if(kw) notes = notes.filter(n => JSON.stringify(n).toLowerCase().includes(kw));
+
+  if(!notes.length){
+    noteList.textContent = "目前沒有符合條件的筆記。";
+    return;
   }
 
-  /* ----------------------------
-   * Data
-   * ---------------------------- */
-  const MBTI_CODES = [
-    "ISTJ","ISFJ","INFJ","INTJ",
-    "ISTP","ISFP","INFP","INTP",
-    "ESTP","ESFP","ENFP","ENTP",
-    "ESTJ","ESFJ","ENFJ","ENTJ",
-  ];
-
-  let MBTI = {}; // from ./data/mbti.json
-
-  function isValidType(code) {
-    return MBTI_CODES.includes(code);
-  }
-
-  function normalizeType(input) {
-    return String(input || "")
-      .trim()
-      .toUpperCase()
-      .replace(/[^A-Z]/g, "")
-      .slice(0, 4);
-  }
-
-  function getTypeObj(code) {
-    return MBTI[code] || null;
-  }
-
-  function typeLabel(code) {
-    const o = getTypeObj(code);
-    return o ? `${code}｜${o.name}` : code;
-  }
-
-  /* ----------------------------
-   * 熊熊小語
-   * ---------------------------- */
-  const BEAR_QUOTES = [
-    "🐻 你願意理解自己，就是一種勇敢。",
-    "🐻 不用急著變成誰，你先好好做你。",
-    "🐻 先把今天過好，明天就會比較溫柔。",
-    "🐻 你不是太敏感，你只是感受很準。",
-    "🐻 如果累了，先休息一下也沒關係。",
-    "🐻 不是每次都要贏，有時候要被抱抱。",
-    "🐻 先說需求，不用先道歉。",
-    "🐻 你很努力了，真的。",
-    "🐻 把關係當隊友，不是對手。",
-    "🐻 你可以慢慢來，我在。",
-  ];
-
-  function randomPick(arr) {
-    return arr[Math.floor(Math.random() * arr.length)];
-  }
-
-  function setBubble(text) {
-    const bubble = $("#bubble");
-    if (!bubble) return;
-    bubble.textContent = text;
-  }
-
-  function initBearChat() {
-    const bearBtn = $("#bearBtn");
-    const bubble = $("#bubble");
-    if (!bearBtn || !bubble) return;
-
-    // 點一下換句
-    bearBtn.addEventListener("click", () => {
-      setBubble(randomPick(BEAR_QUOTES));
-    });
-
-    // 長按複製 bubble 文字
-    let pressTimer = null;
-    const pressMs = 350;
-
-    const startPress = () => {
-      clearTimeout(pressTimer);
-      pressTimer = setTimeout(() => {
-        copyText(bubble.textContent || "");
-      }, pressMs);
-    };
-    const endPress = () => clearTimeout(pressTimer);
-
-    bubble.addEventListener("touchstart", startPress, { passive: true });
-    bubble.addEventListener("touchend", endPress);
-    bubble.addEventListener("touchcancel", endPress);
-    bubble.addEventListener("mousedown", startPress);
-    bubble.addEventListener("mouseup", endPress);
-    bubble.addEventListener("mouseleave", endPress);
-  }
-
-  /* ----------------------------
-   * Modal helpers（對應你的結構：data-close="1"）
-   * ---------------------------- */
-  function openModal(modalEl) {
-    if (!modalEl) return;
-    modalEl.classList.add("open");
-    modalEl.setAttribute("aria-hidden", "false");
-    document.body.classList.add("modal-open");
-  }
-  function closeModal(modalEl) {
-    if (!modalEl) return;
-    modalEl.classList.remove("open");
-    modalEl.setAttribute("aria-hidden", "true");
-    document.body.classList.remove("modal-open");
-  }
-  function bindModalClose(modalEl) {
-    if (!modalEl) return;
-    modalEl.addEventListener("click", (e) => {
-      const t = e.target;
-      if (t && t.getAttribute && t.getAttribute("data-close") === "1") {
-        closeModal(modalEl);
-      }
-    });
-    document.addEventListener("keydown", (e) => {
-      if (e.key === "Escape" && modalEl.classList.contains("open")) closeModal(modalEl);
-    });
-  }
-
-  /* ----------------------------
-   * Populate selects
-   * ---------------------------- */
-  function fillSelect(selectEl, { includeEmpty = false } = {}) {
-    if (!selectEl) return;
-    selectEl.innerHTML = "";
-
-    if (includeEmpty) {
-      const op = document.createElement("option");
-      op.value = "";
-      op.textContent = "請選擇…";
-      selectEl.appendChild(op);
+  noteList.innerHTML = notes.map(n => {
+    if(n.kind === "pair"){
+      const title = n.title || `配對：${n.a}×${n.b}`;
+      const cat = categoryLabel(n.category);
+      const meta = `${cat} ・ ${n.mode==="work" ? "職場" : "親密"} ・ ${n.time || ""}`;
+      return `
+        <div class="note-item">
+          <div class="note-left">
+            <div class="note-name">🤝 ${escapeHtml(title)} <span style="color:#7a5a6a;font-weight:700;">（${cat}）</span></div>
+            <div class="note-meta">${escapeHtml(meta)}</div>
+            <div class="note-memo">📌 ${escapeHtml(n.memo || "")}</div>
+          </div>
+          <div class="note-actions">
+            <button class="note-btn" data-note-del="${escapeHtml(n.id)}">刪除</button>
+          </div>
+        </div>
+      `;
     }
 
-    MBTI_CODES.forEach((code) => {
-      const op = document.createElement("option");
-      op.value = code;
-      op.textContent = typeLabel(code);
-      selectEl.appendChild(op);
-    });
-  }
+    const label = `${n.type}｜${MBTI[n.type]?.name || ""}`;
+    const cat = categoryLabel(n.category);
+    const zodiac = (n.zodiac || "").trim();
+    const memo = (n.memo || "").trim();
+    const meta = `${label}${zodiac ? " ・ " + zodiac : ""} ・ ${n.time || ""}`;
 
-  /* ----------------------------
-   * Render: Type detail
-   * ---------------------------- */
-  function renderTypeDetail(code) {
-    const o = getTypeObj(code);
-    const titleEl = $("#modalTypeTitle");
-    const contentEl = $("#modalTypeContent");
-    if (!titleEl || !contentEl) return;
-
-    if (!o) {
-      titleEl.textContent = "人格詳細解說";
-      contentEl.innerHTML = `<div class="hint">找不到 <b>${code}</b> 的資料，請確認 data/mbti.json 是否包含此型。</div>`;
-      return;
-    }
-
-    const tags = (o.tags || []).map((t) => `<span class="chip">${t}</span>`).join(" ");
-
-    const list = (arr) =>
-      (arr || []).length
-        ? `<ul>${arr.map((x) => `<li>${escapeHTML(String(x))}</li>`).join("")}</ul>`
-        : `<div class="hint small">（尚未填寫）</div>`;
-
-    const section = (ttl, html) => `
-      <div class="section-title" style="margin-top:10px;">${ttl}</div>
-      <div class="card-soft" style="padding:10px;">${html}</div>
-    `;
-
-    titleEl.textContent = `${code}｜${o.name}`;
-
-    contentEl.innerHTML = `
-      <div class="card-soft" style="padding:10px;">
-        <div style="font-weight:800; font-size:14px;">${escapeHTML(o.traits || "")}</div>
-        <div style="margin-top:8px; display:flex; gap:6px; flex-wrap:wrap;">${tags}</div>
+    return `
+      <div class="note-item">
+        <div class="note-left">
+          <div class="note-name">${escapeHtml(n.name)} <span style="color:#7a5a6a;font-weight:700;">（${cat}）</span></div>
+          <div class="note-meta">${escapeHtml(meta)}</div>
+          ${memo ? `<div class="note-memo">📝 ${escapeHtml(memo)}</div>` : ""}
+        </div>
+        <div class="note-actions">
+          <button class="note-btn" data-note-open="${escapeHtml(n.type)}">查看</button>
+          <button class="note-btn" data-note-del="${escapeHtml(n.id)}">刪除</button>
+        </div>
       </div>
-
-      ${section("🌟 優勢", list(o.strengths))}
-      ${section("⚠️ 盲點", list(o.blindspots))}
-      ${section("💼 適合工作", list(o.work))}
-      ${section("🧰 職場提醒", list(o.workTips))}
-      ${section("💞 親密關係提醒", list(o.loveTips))}
-      ${section("🐻 熊熊一句話", `<div style="line-height:1.6;">${escapeHTML(o.bear || "")}</div>`)}
     `;
-  }
+  }).join("");
 
-  function escapeHTML(s) {
-    return s
-      .replaceAll("&", "&amp;")
-      .replaceAll("<", "&lt;")
-      .replaceAll(">", "&gt;")
-      .replaceAll('"', "&quot;")
-      .replaceAll("'", "&#039;");
-  }
+  noteList.querySelectorAll("[data-note-open]").forEach(btn=>{
+    btn.addEventListener("click", ()=>{
+      const t = btn.getAttribute("data-note-open");
+      if(MBTI[t]){
+        setCurrentType(t);
+        openModal(modalType);
+      }
+    });
+  });
 
-  /* ----------------------------
-   * Pairing logic（簡單可用的相處指南）
-   * - 不是「命定配對」，是「溝通策略」
-   * ---------------------------- */
-  function dims(code) {
-    // E/I, S/N, T/F, J/P
-    return {
-      EI: code[0], // E/I
-      SN: code[1], // S/N
-      TF: code[2], // T/F
-      JP: code[3], // J/P
-    };
-  }
+  noteList.querySelectorAll("[data-note-del]").forEach(btn=>{
+    btn.addEventListener("click", ()=>{
+      const id = btn.getAttribute("data-note-del");
+      saveNotes(loadNotes().filter(n => String(n.id) !== String(id)));
+      renderNotes();
+    });
+  });
+}
 
-  function pairAnalysis(a, b, mode /* work|love */) {
-    const A = getTypeObj(a);
-    const B = getTypeObj(b);
-    const da = dims(a);
-    const db = dims(b);
+function bindNoteFilterChips(){
+  document.querySelectorAll(".chip-filter").forEach(chip=>{
+    chip.addEventListener("click", ()=>{
+      document.querySelectorAll(".chip-filter").forEach(x=>x.classList.remove("active"));
+      chip.classList.add("active");
+      noteFilter = chip.dataset.filter;
+      renderNotes();
+    });
+  });
+}
 
-    const same = (k) => da[k] === db[k];
-    const diff = (k) => da[k] !== db[k];
+// ====== Export/Import ======
+function downloadJson(filename, obj){
+  const blob = new Blob([JSON.stringify(obj, null, 2)], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
 
-    const bullets = [];
-    const risks = [];
-    const tips = [];
-
-    // 核心差異解釋
-    if (diff("EI")) {
-      bullets.push(`能量節奏不同：${a} 偏 ${da.EI === "E" ? "外向" : "內向"}，${b} 偏 ${db.EI === "E" ? "外向" : "內向"}。`);
-      tips.push("約定『社交/獨處』的節奏：先說好頻率與充電方式。");
-    } else {
-      bullets.push("能量節奏相近：比較容易在相同頻率上相處。");
-      tips.push("一起建立固定儀式（例：每週一次深聊或一起玩）。");
-    }
-
-    if (diff("SN")) {
-      bullets.push(`資訊偏好不同：${da.SN === "S" ? `${a} 偏具體` : `${a} 偏抽象`}；${db.SN === "S" ? `${b} 偏具體` : `${b} 偏抽象`}。`);
-      risks.push("一方覺得對方太跳躍/太死板。");
-      tips.push("討論時先對齊：『我們在談事實還是談可能性？』");
-    } else {
-      bullets.push("理解世界方式相近：溝通摩擦相對少。");
-    }
-
-    if (diff("TF")) {
-      bullets.push(`決策重點不同：${da.TF === "T" ? `${a} 偏理性` : `${a} 偏感受`}；${db.TF === "T" ? `${b} 偏理性` : `${b} 偏感受`}。`);
-      risks.push("一方想解決問題、一方想被理解，容易錯頻。");
-      tips.push("先共感一句，再談解法（或先談解法，再補一個關心）。");
-    } else {
-      bullets.push("價值判斷語言相近：比較容易『講到同一種重點』。");
-    }
-
-    if (diff("JP")) {
-      bullets.push(`節奏控管不同：${da.JP === "J" ? `${a} 偏計畫` : `${a} 偏彈性`}；${db.JP === "J" ? `${b} 偏計畫` : `${b} 偏彈性`}。`);
-      risks.push("一方覺得對方太隨便/太控制。");
-      tips.push("用『底線 + 彈性區』：先定不可動的，再留可調整的。");
-    } else {
-      bullets.push("做事節奏相近：容易配合與同步。");
-    }
-
-    // 模式加權
-    if (mode === "work") {
-      tips.push("職場建議：用『結論→原因→下一步』，讓溝通可落地。");
-      tips.push("職場建議：把責任與交付寫清楚（避免腦補）。");
-    } else {
-      tips.push("親密建議：衝突先安撫，再討論對錯與方案。");
-      tips.push("親密建議：多做『確認』，少做『猜測測試』。");
-    }
-
-    // 帶入熊熊句
-    const bearLine = randomPick([
-      "🐻 熊熊提醒：配對不是分數，是『怎麼溝通會比較順』。",
-      "🐻 熊熊提醒：你們不是要變一樣，是要學會對方的語言。",
-      "🐻 熊熊提醒：看見差異，就是相處變好的開始。",
-    ]);
-
-    const headline = `${typeLabel(a)} × ${typeLabel(b)}（${mode === "work" ? "職場" : "親密"}）`;
-
-    return {
-      headline,
-      bullets,
-      risks,
-      tips,
-      bearLine,
-      summaryText:
-        `${headline}\n\n` +
-        `相處特性：\n- ${bullets.join("\n- ")}\n\n` +
-        (risks.length ? `可能卡點：\n- ${risks.join("\n- ")}\n\n` : "") +
-        `熊熊建議：\n- ${tips.join("\n- ")}\n\n` +
-        `${bearLine}`,
-    };
-  }
-
-  function actionList3(a, b, mode) {
-    // 3條「可做」的行動
-    const da = dims(a);
-    const db = dims(b);
-
-    const actions = [];
-
-    // 1) 對齊溝通格式
-    actions.push(mode === "work"
-      ? "✅ 每次討論先用一句話說結論，再補原因與下一步（避免講一圈沒共識）。"
-      : "✅ 衝突時先用一句話安撫（我懂你/我在），再談怎麼做（避免越吵越遠）。"
-    );
-
-    // 2) 對齊差異最大的維度
-    if (da.TF !== db.TF) {
-      actions.push("✅ 約定『先共感/先解法』的順序：一方先被理解，另一方再給方案。");
-    } else if (da.SN !== db.SN) {
-      actions.push("✅ 討論前先說清楚：現在談『事實細節』還是『方向可能性』，避免錯頻。");
-    } else if (da.JP !== db.JP) {
-      actions.push("✅ 用『底線＋彈性區』：把不可動的先定好，其餘留彈性（計畫派/隨性派都舒服）。");
-    } else {
-      actions.push("✅ 做一個共同小儀式（每週一次）：固定時間對齊近況與下一步，關係更穩。");
-    }
-
-    // 3) 節奏/能量照顧
-    if (da.EI !== db.EI) {
-      actions.push("✅ 約定充電方式：外向派要互動、內向派要空間，先說好就少誤會。");
-    } else {
-      actions.push("✅ 用同頻活動補能量：一起散步/一起做事/一起玩，讓關係自然變好。");
-    }
-
-    return actions.slice(0, 3);
-  }
-
-  /* ----------------------------
-   * Notebook storage model
-   * ---------------------------- */
-  function getNotebook() {
-    const nb = loadLS(LS.notebook, null);
-    if (nb && typeof nb === "object") {
+function normalizeImportedNotes(arr){
+  if(!Array.isArray(arr)) return [];
+  return arr
+    .filter(x => x && typeof x === "object")
+    .map(x => {
+      const kind = x.kind === "pair" ? "pair" : "person";
+      if(kind === "pair"){
+        return {
+          kind: "pair",
+          id: String(x.id || uid()),
+          category: x.category || (x.mode==="work" ? "coworker" : "friend"),
+          a: String(x.a || "").toUpperCase(),
+          b: String(x.b || "").toUpperCase(),
+          mode: x.mode === "love" ? "love" : "work",
+          title: x.title || "",
+          memo: String(x.memo || ""),
+          time: x.time || nowStamp()
+        };
+      }
       return {
-        people: Array.isArray(nb.people) ? nb.people : [],
-        pairs: Array.isArray(nb.pairs) ? nb.pairs : [],
+        kind: "person",
+        id: String(x.id || uid()),
+        name: String(x.name || "未命名"),
+        category: x.category || "friend",
+        type: String(x.type || "").toUpperCase(),
+        zodiac: String(x.zodiac || ""),
+        memo: String(x.memo || ""),
+        time: x.time || nowStamp()
       };
-    }
-    return { people: [], pairs: [] };
+    });
+}
+
+function importNotes(arr, mode){
+  const incoming = normalizeImportedNotes(arr);
+  if(!incoming.length){
+    alert("匯入內容不是有效的筆記陣列（JSON Array）。");
+    return;
+  }
+  const current = loadNotes();
+
+  if(mode === "replace"){
+    saveNotes(incoming);
+    renderNotes();
+    alert("✅ 已用匯入內容覆蓋現有筆記");
+    return;
   }
 
-  function saveNotebook(nb) {
-    saveLS(LS.notebook, nb);
-  }
+  const map = new Map(current.map(n => [String(n.id), n]));
+  for(const n of incoming) map.set(String(n.id), n);
 
-  /* ----------------------------
-   * Notebook render & filter
-   * ---------------------------- */
-  const noteState = {
-    filter: "all", // all|family|friend|coworker
-    q: "",
+  const merged = Array.from(map.values())
+    .sort((a,b)=> (b.time||"").localeCompare(a.time||""));
+  saveNotes(merged);
+  renderNotes();
+  alert("✅ 已合併匯入筆記");
+}
+
+// ====== Events ======
+
+// 熊熊氣泡
+bubble.textContent = randomBearLine();
+bearBtn.addEventListener("click", ()=> bubble.textContent = randomBearLine());
+bubble.addEventListener("pointerdown", ()=>{
+  const timer = setTimeout(async ()=>{
+    try{
+      await navigator.clipboard.writeText(bubble.textContent);
+      bubble.textContent = "✅ 已複製！";
+      setTimeout(()=> bubble.textContent = randomBearLine(), 900);
+    }catch{}
+  }, 520);
+  const up = ()=>{
+    clearTimeout(timer);
+    window.removeEventListener("pointerup", up);
+    window.removeEventListener("pointercancel", up);
   };
+  window.addEventListener("pointerup", up);
+  window.addEventListener("pointercancel", up);
+});
 
-  function matchesText(item, q) {
-    if (!q) return true;
-    const s = q.trim().toLowerCase();
-    const hay = JSON.stringify(item).toLowerCase();
-    return hay.includes(s);
+// 測驗入口
+testUrl.value = DEFAULT_TEST_URL;
+openTestBtn.addEventListener("click", ()=>{
+  const url = (testUrl.value || DEFAULT_TEST_URL).trim();
+  if(!/^https?:\/\//i.test(url)) return alert("請輸入以 http(s):// 開頭的網址");
+  window.open(url, "_blank", "noopener");
+});
+
+// 複製目前人格
+copyTypeBtn.addEventListener("click", async ()=>{
+  try{
+    await navigator.clipboard.writeText(currentType);
+    bubble.textContent = `✅ 已複製：${currentType}`;
+  }catch{}
+});
+
+// 查人格
+goTypeBtn.addEventListener("click", ()=>{
+  const t = normalizeType(typeInput.value) || typeSelect.value;
+  if(MBTI[t]){
+    setCurrentType(t);
+    openModal(modalType);
+  }else alert("找不到這個 MBTI，請輸入 4 碼英文，例如 INFP。");
+});
+typeInput.addEventListener("keydown",(e)=>{ if(e.key==="Enter") goTypeBtn.click(); });
+typeSelect.addEventListener("change", ()=> setCurrentType(typeSelect.value));
+randomBtn.addEventListener("click", ()=>{
+  const t = TYPES[Math.floor(Math.random()*TYPES.length)];
+  setCurrentType(t);
+  openModal(modalType);
+});
+openDetailBtn.addEventListener("click", ()=> openModal(modalType));
+
+// Dock：配對
+dockPair.addEventListener("click", ()=>{
+  if(MBTI[currentType]) pairA.value = currentType;
+  modalPairTitle.textContent = "🤝 配對相處指南";
+  modalPairContent.textContent = "請先選擇兩種人格，按「分析」。";
+  lastPairText = "";
+  lastPairMeta = null;
+  lastPairActions = "";
+  openModal(modalPair);
+});
+
+// 情境切換
+document.querySelectorAll(".seg-btn").forEach(btn=>{
+  btn.addEventListener("click", ()=>{
+    document.querySelectorAll(".seg-btn").forEach(x=>x.classList.remove("active"));
+    btn.classList.add("active");
+    pairMode = btn.dataset.mode;
+  });
+});
+
+pairSwapBtn.addEventListener("click", ()=>{
+  const a = pairA.value;
+  pairA.value = pairB.value;
+  pairB.value = a;
+});
+
+pairBtn.addEventListener("click", ()=>{
+  const a = pairA.value;
+  const b = pairB.value;
+  if(!MBTI[a] || !MBTI[b]) return;
+
+  const full = pairingAdvice(a,b,pairMode);
+  modalPairTitle.textContent = `🤝 ${a} × ${b}（${pairMode==="work" ? "職場" : "親密"}）`;
+  modalPairContent.textContent = full;
+
+  lastPairText = full;
+  lastPairMeta = { a, b, mode: pairMode };
+  lastPairActions = ""; // 重新分析後清空行動清單
+});
+
+// ✅ 生成 3 條相處行動清單
+pairActionBtn.addEventListener("click", ()=>{
+  if(!lastPairMeta){
+    alert("請先按「分析」產生配對結果，再生成行動清單。");
+    return;
   }
+  const { a, b, mode } = lastPairMeta;
+  const actions = buildPairActions(a,b,mode);
+  lastPairActions = actions;
 
-  function renderNotebookList() {
-    const listEl = $("#noteList");
-    if (!listEl) return;
+  // 直接追加在結果下面，讓你一眼看到
+  const merged = `${lastPairText}\n\n✅【相處行動清單（3條）】\n${actions}`;
+  modalPairContent.textContent = merged;
+  lastPairText = merged;
 
-    const nb = getNotebook();
-    const q = noteState.q;
-    const filter = noteState.filter;
+  bubble.textContent = "✅ 已生成相處行動清單（3條）";
+});
 
-    const people = nb.people
-      .filter((x) => filter === "all" || x.category === filter)
-      .filter((x) => matchesText(x, q))
-      .sort((a, b) => (b.createdAt || "").localeCompare(a.createdAt || ""));
-
-    const pairs = nb.pairs
-      .filter((x) => matchesText(x, q))
-      .sort((a, b) => (b.createdAt || "").localeCompare(a.createdAt || ""));
-
-    if (!people.length && !pairs.length) {
-      listEl.innerHTML = `<div class="hint">尚未新增任何筆記。</div>`;
-      return;
-    }
-
-    const personCard = (p) => `
-      <div class="card-soft" style="padding:10px; margin-bottom:10px;">
-        <div style="display:flex; justify-content:space-between; gap:10px;">
-          <div>
-            <div style="font-weight:900;">👤 ${escapeHTML(p.name || "（未命名）")}</div>
-            <div class="small" style="opacity:.85; margin-top:2px;">
-              ${escapeHTML(labelCategory(p.category))}｜<b>${escapeHTML(p.type || "")}</b>${p.zodiac ? `｜${escapeHTML(p.zodiac)}` : ""}
-            </div>
-          </div>
-          <div style="display:flex; gap:6px; flex-wrap:wrap; justify-content:flex-end;">
-            <button class="chip" data-act="copy" data-kind="person" data-id="${p.id}">複製</button>
-            <button class="chip" data-act="delete" data-kind="person" data-id="${p.id}">刪除</button>
-          </div>
-        </div>
-
-        ${p.memo ? `<div style="margin-top:8px; white-space:pre-wrap; line-height:1.6;">${escapeHTML(p.memo)}</div>` : `<div class="hint small" style="margin-top:8px;">（沒有備註）</div>`}
-
-        ${p.advice ? `<div style="margin-top:8px; padding-top:8px; border-top:1px dashed rgba(0,0,0,.15); white-space:pre-wrap; line-height:1.6;">${escapeHTML(p.advice)}</div>` : ""}
-      </div>
-    `;
-
-    const pairCard = (x) => `
-      <div class="card-soft" style="padding:10px; margin-bottom:10px;">
-        <div style="display:flex; justify-content:space-between; gap:10px;">
-          <div>
-            <div style="font-weight:900;">🤝 ${escapeHTML(x.title || "")}</div>
-            <div class="small" style="opacity:.85; margin-top:2px;">
-              ${escapeHTML(x.mode === "work" ? "職場" : "親密")}｜${escapeHTML(x.a)} × ${escapeHTML(x.b)}
-            </div>
-          </div>
-          <div style="display:flex; gap:6px; flex-wrap:wrap; justify-content:flex-end;">
-            <button class="chip" data-act="copy" data-kind="pair" data-id="${x.id}">複製</button>
-            <button class="chip" data-act="delete" data-kind="pair" data-id="${x.id}">刪除</button>
-          </div>
-        </div>
-
-        <div style="margin-top:8px; white-space:pre-wrap; line-height:1.6;">${escapeHTML(x.content || "")}</div>
-      </div>
-    `;
-
-    listEl.innerHTML = `
-      ${people.length ? `<div class="section-title">👤 人物筆記</div>${people.map(personCard).join("")}` : ""}
-      ${pairs.length ? `<div class="section-title" style="margin-top:10px;">🤝 配對紀錄</div>${pairs.map(pairCard).join("")}` : ""}
-    `;
-
-    // 綁定複製/刪除
-    listEl.querySelectorAll("[data-act]").forEach((btn) => {
-      btn.addEventListener("click", () => {
-        const act = btn.getAttribute("data-act");
-        const kind = btn.getAttribute("data-kind");
-        const id = btn.getAttribute("data-id");
-        if (!id) return;
-
-        const nb2 = getNotebook();
-
-        if (act === "delete") {
-          if (kind === "person") nb2.people = nb2.people.filter((p) => p.id !== id);
-          if (kind === "pair") nb2.pairs = nb2.pairs.filter((p) => p.id !== id);
-          saveNotebook(nb2);
-          toast("🗑️ 已刪除");
-          renderNotebookList();
-          return;
-        }
-
-        if (act === "copy") {
-          if (kind === "person") {
-            const p = nb2.people.find((x) => x.id === id);
-            if (!p) return;
-            const text =
-              `👤 ${p.name}\n分類：${labelCategory(p.category)}\nMBTI：${p.type}\n星座：${p.zodiac || "（無）"}\n備註：\n${p.memo || "（無）"}\n` +
-              (p.advice ? `\n溝通建議：\n${p.advice}\n` : "");
-            copyText(text);
-          }
-          if (kind === "pair") {
-            const x = nb2.pairs.find((y) => y.id === id);
-            if (!x) return;
-            copyText(x.content || "");
-          }
-        }
-      });
-    });
+// ✅ 一鍵存配對到筆記本
+pairSaveBtn.addEventListener("click", ()=>{
+  if(!lastPairText || !lastPairMeta){
+    alert("請先按「分析」產生配對結果，再存入筆記本。");
+    return;
   }
+  const { a, b, mode } = lastPairMeta;
+  const category = (mode === "work") ? "coworker" : "friend";
+  const title = `${a}×${b}（${mode==="work" ? "職場" : "親密"}）`;
 
-  function labelCategory(cat) {
-    if (cat === "family") return "家人";
-    if (cat === "friend") return "朋友";
-    if (cat === "coworker") return "同事";
-    return "其他";
+  const notes = loadNotes();
+  notes.unshift({
+    kind: "pair",
+    id: uid(),
+    category,
+    a,
+    b,
+    mode,
+    title,
+    memo: lastPairText,
+    time: nowStamp()
+  });
+  saveNotes(notes);
+
+  bubble.textContent = "✅ 已存入筆記本（配對紀錄）";
+  renderNotes();
+  openModal(modalNotebook);
+});
+
+// Dock：筆記本
+dockNotebook.addEventListener("click", ()=>{
+  renderNotes();
+  openModal(modalNotebook);
+});
+
+// ✅ 人物筆記：一鍵生成溝通建議（塞入備註欄）
+noteAdviceBtn.addEventListener("click", ()=>{
+  const t = noteType.value;
+  if(!MBTI[t]) return alert("請先選擇 MBTI");
+
+  const d = MBTI[t];
+  const cat = noteCategory.value;
+
+  const tips = (cat === "coworker") ? (d.workTips || []) : (d.loveTips || []);
+  const lms = (d.landmines || []);
+
+  const pick = (arr, i) => (arr && arr.length) ? arr[i % arr.length] : "";
+  const a1 = pick(lms, 0) || "否定/逼迫";
+  const a2 = pick(lms, 1) || "冷處理/敷衍";
+  const t1 = pick(tips, 0) || "先講重點再補細節";
+  const t2 = pick(tips, 1) || "先確認再討論";
+
+  const suggestion =
+`🗣️【對 ${t} 的溝通建議】 
+1) 先避雷：盡量避免「${a1}」與「${a2}」的情境。
+2) 建議說法：先用一句話講目的/重點，再補原因與選項。
+3) 熊熊小招：${t1}；另外也可以：${t2}`;
+
+  // 追加到備註欄
+  const current = (noteMemo.value || "").trim();
+  noteMemo.value = current ? `${current}\n\n${suggestion}` : suggestion;
+
+  bubble.textContent = "✅ 已把溝通建議放進備註欄";
+});
+
+// 新增人物筆記
+noteSaveBtn.addEventListener("click", ()=>{
+  const name = (noteName.value||"").trim();
+  const category = noteCategory.value;
+  const type = noteType.value;
+  const zodiac = (noteZodiac.value||"").trim();
+  const memo = (noteMemo.value||"").trim();
+
+  if(!name) return alert("請先輸入暱稱或名字");
+  if(!MBTI[type]) return alert("請選擇有效的 MBTI");
+
+  const notes = loadNotes();
+  notes.unshift({
+    kind: "person",
+    id: uid(),
+    name,
+    category,
+    type,
+    zodiac,
+    memo,
+    time: nowStamp()
+  });
+  saveNotes(notes);
+
+  noteName.value = "";
+  noteZodiac.value = "";
+  noteMemo.value = "";
+  renderNotes();
+});
+
+// 清空
+noteClearBtn.addEventListener("click", ()=>{
+  if(!confirm("確定要清空全部筆記嗎？")) return;
+  saveNotes([]);
+  renderNotes();
+});
+
+// 搜尋
+noteSearch.addEventListener("input", ()=> renderNotes());
+bindNoteFilterChips();
+
+// 匯出
+noteExportBtn.addEventListener("click", ()=> downloadJson("mbtiBearNotes.json", loadNotes()));
+
+// 匯入（檔案）
+noteImportBtn.addEventListener("click", ()=>{
+  noteImportFile.value = "";
+  noteImportFile.click();
+});
+noteImportFile.addEventListener("change", async ()=>{
+  const file = noteImportFile.files && noteImportFile.files[0];
+  if(!file) return;
+  try{
+    const text = await file.text();
+    const data = JSON.parse(text);
+    const replace = confirm("要覆蓋現有筆記嗎？\n按【確定】= 覆蓋\n按【取消】= 合併");
+    importNotes(data, replace ? "replace" : "merge");
+  }catch{
+    alert("匯入失敗：請確認檔案是有效 JSON。");
   }
+});
 
-  /* ----------------------------
-   * 人物溝通建議（noteAdviceBtn）
-   * ---------------------------- */
-  function genAdviceForPerson(name, type, memo) {
-    const o = getTypeObj(type);
-    const base = o
-      ? [
-          `對象：${name || "（未命名）"}｜${type}（${o.name}）`,
-          "",
-          `先抓重點：${o.traits || ""}`,
-          "",
-          "🗣️ 溝通建議（你可以直接照做）：",
-          `1) 先用一句話確認對方狀態：例如「我懂你現在可能有點${o.tags?.[0] || "在意"}，我在。」`,
-          `2) 再用對方偏好的語言說重點：${type[2] === "T" ? "給結論/理由/選項" : "給感受/關心/安全感"}`,
-          `3) 最後給一個可選擇的下一步：例如「我們要不要先…？」`,
-          "",
-          "⚠️ 可能地雷：",
-          `- ${o.blindspots?.[0] || "不要用貼標籤方式否定"}`,
-          "",
-          "🐻 熊熊提醒：不要追求一次講完，追求『一次更靠近一點點』。",
-        ]
-      : [
-          `對象：${name || "（未命名）"}｜${type || "（未填 MBTI）"}`,
-          "",
-          "🗣️ 溝通建議：",
-          "1) 先問對方需要：要『安慰』還是『解法』？",
-          "2) 把期待說清楚（時間、方式、底線）。",
-          "3) 用一句話收尾確認：『所以我們就先這樣做，可以嗎？』",
-        ];
-
-    if (memo && memo.trim()) {
-      base.push("");
-      base.push("📌 你備註的重點（我幫你放進策略裡）：");
-      base.push(memo.trim());
-    }
-    return base.join("\n");
+// 匯入（貼上）
+noteImportTextBtn.addEventListener("click", ()=>{
+  const text = (noteImportText.value || "").trim();
+  if(!text) return alert("請先貼上 JSON 內容");
+  try{
+    const data = JSON.parse(text);
+    const replace = confirm("要覆蓋現有筆記嗎？\n按【確定】= 覆蓋\n按【取消】= 合併");
+    importNotes(data, replace ? "replace" : "merge");
+  }catch{
+    alert("貼上內容不是有效 JSON。");
   }
+});
 
-  /* ----------------------------
-   * Main interactions
-   * ---------------------------- */
-  function initTypeSearch() {
-    const typeInput = $("#typeInput");
-    const goTypeBtn = $("#goTypeBtn");
-    const typeSelect = $("#typeSelect");
-    const randomBtn = $("#randomBtn");
-    const openDetailBtn = $("#openDetailBtn");
+// ====== Init ======
+async function init(){
+  try{
+    const res = await fetch(MBTI_JSON_URL, { cache: "no-store" });
+    if(!res.ok) throw new Error("fetch failed");
+    MBTI = await res.json();
+    TYPES = Object.keys(MBTI).sort();
 
-    const modalType = $("#modalType");
-    bindModalClose(modalType);
-
-    // populate select
-    fillSelect(typeSelect, { includeEmpty: false });
-
-    // restore last type
-    const lastType = loadLS(LS.lastType, "INFP");
-    if (typeInput) typeInput.value = lastType;
-    if (typeSelect) typeSelect.value = isValidType(lastType) ? lastType : MBTI_CODES[0];
-
-    const applyType = (code) => {
-      const t = normalizeType(code);
-      if (!isValidType(t)) {
-        toast("⚠️ 請輸入正確 MBTI（例如 INFP）");
-        return null;
-      }
-      if (typeInput) typeInput.value = t;
-      if (typeSelect) typeSelect.value = t;
-      saveLS(LS.lastType, t);
-      return t;
-    };
-
-    goTypeBtn?.addEventListener("click", () => {
-      const t = applyType(typeInput?.value);
-      if (!t) return;
-      toast(`✅ 已選擇 ${t}`);
-    });
-
-    typeInput?.addEventListener("keydown", (e) => {
-      if (e.key === "Enter") goTypeBtn?.click();
-    });
-
-    typeSelect?.addEventListener("change", () => {
-      const t = applyType(typeSelect.value);
-      if (!t) return;
-      toast(`✅ 已選擇 ${t}`);
-    });
-
-    randomBtn?.addEventListener("click", () => {
-      const t = randomPick(MBTI_CODES);
-      applyType(t);
-      toast(`🎲 隨機：${t}`);
-    });
-
-    openDetailBtn?.addEventListener("click", () => {
-      const t = applyType(typeInput?.value || typeSelect?.value);
-      if (!t) return;
-      renderTypeDetail(t);
-      openModal(modalType);
-    });
-  }
-
-  function initTestLink() {
-    const testUrl = $("#testUrl");
-    const openTestBtn = $("#openTestBtn");
-    const copyTypeBtn = $("#copyTypeBtn");
-
-    if (testUrl) {
-      const saved = loadLS(LS.testUrl, "");
-      if (saved) testUrl.value = saved;
-      testUrl.addEventListener("change", () => {
-        saveLS(LS.testUrl, testUrl.value.trim());
-      });
-      testUrl.addEventListener("blur", () => {
-        saveLS(LS.testUrl, testUrl.value.trim());
-      });
-    }
-
-    openTestBtn?.addEventListener("click", () => {
-      const url = (testUrl?.value || "").trim();
-      if (!url) {
-        toast("⚠️ 先貼上測驗網址");
-        return;
-      }
-      saveLS(LS.testUrl, url);
-      window.open(url, "_blank", "noopener");
-    });
-
-    copyTypeBtn?.addEventListener("click", () => {
-      const t = normalizeType($("#typeInput")?.value || $("#typeSelect")?.value);
-      if (!isValidType(t)) {
-        toast("⚠️ 請先選一個 MBTI");
-        return;
-      }
-      copyText(t);
-    });
-  }
-
-  /* ----------------------------
-   * Dock buttons -> open modals
-   * ---------------------------- */
-  function initDock() {
-    const dockPair = $("#dockPair");
-    const dockNotebook = $("#dockNotebook");
-    const modalPair = $("#modalPair");
-    const modalNotebook = $("#modalNotebook");
-
-    bindModalClose(modalPair);
-    bindModalClose(modalNotebook);
-
-    dockPair?.addEventListener("click", () => {
-      openModal(modalPair);
-    });
-    dockNotebook?.addEventListener("click", () => {
-      openModal(modalNotebook);
-      renderNotebookList();
-    });
-  }
-
-  /* ----------------------------
-   * Pair modal
-   * ---------------------------- */
-  let pairMode = "work"; // default
-
-  function initPair() {
-    const modalPair = $("#modalPair");
-    const pairA = $("#pairA");
-    const pairB = $("#pairB");
-    const pairBtn = $("#pairBtn");
-    const pairSwapBtn = $("#pairSwapBtn");
-    const pairContent = $("#modalPairContent");
-    const pairActionBtn = $("#pairActionBtn");
-    const pairSaveBtn = $("#pairSaveBtn");
-
-    // seg buttons
-    const segBtns = $$(".seg-btn", modalPair);
-
+    fillSelect(typeSelect);
     fillSelect(pairA);
     fillSelect(pairB);
+    fillSelect(noteType);
 
-    // default values from lastType
-    const lastType = loadLS(LS.lastType, "INFP");
-    if (pairA) pairA.value = isValidType(lastType) ? lastType : "INFP";
-    if (pairB) pairB.value = "ENFJ";
+    const initType = MBTI[currentType] ? currentType : TYPES[0];
+    setCurrentType(initType);
+    pairA.value = initType;
+    pairB.value = initType;
 
-    segBtns.forEach((btn) => {
-      btn.addEventListener("click", () => {
-        segBtns.forEach((b) => b.classList.remove("active"));
-        btn.classList.add("active");
-        pairMode = btn.getAttribute("data-mode") || "work";
-        // 如果已經有結果，切模式就重算
-        if (pairA?.value && pairB?.value && pairContent && pairContent.dataset.hasResult === "1") {
-          pairBtn?.click();
-        }
-      });
-    });
-
-    pairSwapBtn?.addEventListener("click", () => {
-      const a = pairA?.value;
-      const b = pairB?.value;
-      if (!a || !b) return;
-      pairA.value = b;
-      pairB.value = a;
-      toast("🔁 已交換");
-    });
-
-    const renderPair = () => {
-      const a = pairA?.value;
-      const b = pairB?.value;
-      if (!isValidType(a) || !isValidType(b)) {
-        toast("⚠️ 請先選擇兩種人格");
-        return null;
-      }
-      const res = pairAnalysis(a, b, pairMode);
-      if (pairContent) {
-        pairContent.dataset.hasResult = "1";
-        pairContent.innerHTML = `
-          <div class="card-soft" style="padding:10px;">
-            <div style="font-weight:900; margin-bottom:6px;">${escapeHTML(res.headline)}</div>
-
-            <div class="section-title" style="margin-top:8px;">✨ 相處特性</div>
-            <ul>${res.bullets.map((x) => `<li>${escapeHTML(x)}</li>`).join("")}</ul>
-
-            ${res.risks.length ? `
-              <div class="section-title" style="margin-top:8px;">⚠️ 可能卡點</div>
-              <ul>${res.risks.map((x) => `<li>${escapeHTML(x)}</li>`).join("")}</ul>
-            ` : ""}
-
-            <div class="section-title" style="margin-top:8px;">🧭 熊熊建議</div>
-            <ul>${res.tips.map((x) => `<li>${escapeHTML(x)}</li>`).join("")}</ul>
-
-            <div style="margin-top:10px; white-space:pre-wrap; line-height:1.6; font-weight:700;">
-              ${escapeHTML(res.bearLine)}
-            </div>
-
-            <div class="mini-actions" style="margin-top:10px;">
-              <button class="chip" id="pairCopyBtn">📌 複製這段分析</button>
-            </div>
-          </div>
-        `;
-
-        $("#pairCopyBtn")?.addEventListener("click", () => copyText(res.summaryText));
-      }
-      return res;
-    };
-
-    pairBtn?.addEventListener("click", renderPair);
-
-    pairActionBtn?.addEventListener("click", () => {
-      const a = pairA?.value;
-      const b = pairB?.value;
-      if (!isValidType(a) || !isValidType(b)) {
-        toast("⚠️ 請先選擇兩種人格");
-        return;
-      }
-      const actions = actionList3(a, b, pairMode);
-      const text =
-        `✅ 相處行動清單（${pairMode === "work" ? "職場" : "親密"}）\n` +
-        `${typeLabel(a)} × ${typeLabel(b)}\n\n` +
-        actions.map((x, i) => `${i + 1}. ${x.replace(/^✅\s*/, "")}`).join("\n");
-
-      if (pairContent) {
-        pairContent.innerHTML = `
-          <div class="card-soft" style="padding:10px;">
-            <div style="font-weight:900;">✅ 相處行動清單（3條）</div>
-            <div class="small" style="opacity:.85; margin-top:2px;">${escapeHTML(typeLabel(a))} × ${escapeHTML(typeLabel(b))}｜${escapeHTML(pairMode === "work" ? "職場" : "親密")}</div>
-            <ol style="margin-top:8px;">${actions.map((x) => `<li>${escapeHTML(x.replace(/^✅\s*/, ""))}</li>`).join("")}</ol>
-            <div class="mini-actions" style="margin-top:10px;">
-              <button class="chip" id="pairCopyActionsBtn">📌 複製行動清單</button>
-            </div>
-          </div>
-        `;
-        $("#pairCopyActionsBtn")?.addEventListener("click", () => copyText(text));
-      }
-      toast("✅ 已生成行動清單");
-    });
-
-    pairSaveBtn?.addEventListener("click", () => {
-      const a = pairA?.value;
-      const b = pairB?.value;
-      if (!isValidType(a) || !isValidType(b)) {
-        toast("⚠️ 請先選擇兩種人格");
-        return;
-      }
-
-      // 存「目前畫面」：若未按分析，就先分析一次
-      const res = renderPair() || pairAnalysis(a, b, pairMode);
-
-      const nb = getNotebook();
-      const id = cryptoId();
-
-      nb.pairs.unshift({
-        id,
-        createdAt: nowISO(),
-        mode: pairMode,
-        a,
-        b,
-        title: res.headline,
-        content: res.summaryText,
-      });
-
-      saveNotebook(nb);
-      toast("💾 已存進筆記本");
-    });
+  }catch(e){
+    alert("⚠️ MBTI 資料載入失敗：請確認 data/mbti.json 路徑是否正確，且已上傳到 GitHub。");
+    console.error(e);
   }
+}
+init();
 
-  function cryptoId() {
-    // 兼容沒有 crypto.randomUUID 的環境
-    if (window.crypto && crypto.randomUUID) return crypto.randomUUID();
-    return "id_" + Math.random().toString(16).slice(2) + "_" + Date.now();
-  }
-
-  /* ----------------------------
-   * Notebook modal: bind actions
-   * ---------------------------- */
-  function initNotebook() {
-    const modalNotebook = $("#modalNotebook");
-    if (!modalNotebook) return;
-
-    const noteName = $("#noteName");
-    const noteCategory = $("#noteCategory");
-    const noteType = $("#noteType");
-    const noteZodiac = $("#noteZodiac");
-    const noteMemo = $("#noteMemo");
-
-    const noteAdviceBtn = $("#noteAdviceBtn");
-    const noteSaveBtn = $("#noteSaveBtn");
-    const noteExportBtn = $("#noteExportBtn");
-    const noteImportBtn = $("#noteImportBtn");
-    const noteImportFile = $("#noteImportFile");
-    const noteImportText = $("#noteImportText");
-    const noteImportTextBtn = $("#noteImportTextBtn");
-    const noteSearch = $("#noteSearch");
-    const noteClearBtn = $("#noteClearBtn");
-
-    // selects
-    fillSelect(noteType, { includeEmpty: false });
-
-    // filters chips
-    const chips = $$(".chip-filter", modalNotebook);
-    chips.forEach((chip) => {
-      chip.addEventListener("click", () => {
-        chips.forEach((c) => c.classList.remove("active"));
-        chip.classList.add("active");
-        noteState.filter = chip.getAttribute("data-filter") || "all";
-        renderNotebookList();
-      });
-    });
-
-    noteSearch?.addEventListener("input", () => {
-      noteState.q = noteSearch.value || "";
-      renderNotebookList();
-    });
-
-    noteAdviceBtn?.addEventListener("click", () => {
-      const name = (noteName?.value || "").trim();
-      const type = normalizeType(noteType?.value || "");
-      const memo = (noteMemo?.value || "").trim();
-
-      if (!isValidType(type)) {
-        toast("⚠️ 先選擇對方 MBTI");
-        return;
-      }
-
-      const advice = genAdviceForPerson(name, type, memo);
-      // 直接把建議塞進 memo 下方（不破壞你既有欄位）
-      // 我們把它加到 memo 末尾（如果你想分欄位，我也可以改成獨立區塊）
-      const combined = (memo ? memo + "\n\n" : "") + "—— 溝通建議 ——\n" + advice;
-      noteMemo.value = combined;
-      toast("🗣️ 已生成建議（已寫入備註）");
-    });
-
-    noteSaveBtn?.addEventListener("click", () => {
-      const name = (noteName?.value || "").trim();
-      const category = noteCategory?.value || "friend";
-      const type = normalizeType(noteType?.value || "");
-      const zodiac = (noteZodiac?.value || "").trim();
-      const memo = (noteMemo?.value || "").trim();
-
-      if (!name) {
-        toast("⚠️ 請輸入暱稱/名字");
-        return;
-      }
-      if (!isValidType(type)) {
-        toast("⚠️ 請選擇 MBTI");
-        return;
-      }
-
-      const nb = getNotebook();
-      nb.people.unshift({
-        id: cryptoId(),
-        createdAt: nowISO(),
-        name,
-        category,
-        type,
-        zodiac,
-        memo,
-        advice: "", // 先保留欄位（若你未來想分開顯示）
-      });
-
-      saveNotebook(nb);
-
-      // 清空表單
-      noteName.value = "";
-      noteZodiac.value = "";
-      noteMemo.value = "";
-
-      toast("➕ 已新增人物筆記");
-      renderNotebookList();
-    });
-
-    // Export JSON
-    noteExportBtn?.addEventListener("click", () => {
-      const nb = getNotebook();
-      const json = JSON.stringify(nb, null, 2);
-      const blob = new Blob([json], { type: "application/json" });
-      const url = URL.createObjectURL(blob);
-
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `mbti-bear-notebook_${new Date().toISOString().slice(0, 10)}.json`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
-
-      toast("📦 已匯出");
-    });
-
-    // Import JSON file
-    noteImportBtn?.addEventListener("click", () => {
-      noteImportFile?.click();
-    });
-
-    noteImportFile?.addEventListener("change", async () => {
-      const file = noteImportFile.files?.[0];
-      if (!file) return;
-
-      try {
-        const text = await file.text();
-        importNotebookFromText(text);
-        noteImportFile.value = "";
-      } catch {
-        toast("⚠️ 匯入失敗（檔案讀取錯誤）");
-      }
-    });
-
-    // Import from pasted text
-    noteImportTextBtn?.addEventListener("click", () => {
-      const text = (noteImportText?.value || "").trim();
-      if (!text) {
-        toast("⚠️ 先貼上 JSON 內容");
-        return;
-      }
-      importNotebookFromText(text);
-    });
-
-    function importNotebookFromText(text) {
-      const obj = safeParse(text, null);
-      if (!obj || typeof obj !== "object") {
-        toast("⚠️ JSON 格式不正確");
-        return;
-      }
-
-      const incoming = {
-        people: Array.isArray(obj.people) ? obj.people : [],
-        pairs: Array.isArray(obj.pairs) ? obj.pairs : [],
-      };
-
-      // 合併（避免覆蓋）
-      const nb = getNotebook();
-      const merged = {
-        people: [...incoming.people, ...nb.people],
-        pairs: [...incoming.pairs, ...nb.pairs],
-      };
-
-      // 去重（以 id）
-      merged.people = dedupeById(merged.people);
-      merged.pairs = dedupeById(merged.pairs);
-
-      saveNotebook(merged);
-      toast("✅ 匯入完成");
-      renderNotebookList();
-    }
-
-    function dedupeById(arr) {
-      const seen = new Set();
-      const out = [];
-      for (const it of arr) {
-        const id = it && it.id ? String(it.id) : null;
-        if (!id) {
-          // 沒 id 的給新 id
-          const copy = { ...it, id: cryptoId(), createdAt: it.createdAt || nowISO() };
-          out.push(copy);
-          continue;
-        }
-        if (seen.has(id)) continue;
-        seen.add(id);
-        out.push(it);
-      }
-      return out;
-    }
-
-    // Clear all
-    noteClearBtn?.addEventListener("click", () => {
-      const ok = confirm("確定要清空全部筆記嗎？（此動作無法復原）");
-      if (!ok) return;
-      saveNotebook({ people: [], pairs: [] });
-      toast("🧹 已清空");
-      renderNotebookList();
-    });
-
-    // 每次打開 modal 就刷新列表
-    modalNotebook.addEventListener("transitionend", () => {
-      if (modalNotebook.classList.contains("open")) renderNotebookList();
-    });
-  }
-
-  /* ----------------------------
-   * Init: fetch mbti.json and bind everything
-   * ---------------------------- */
-  async function loadMBTI() {
-    try {
-      const res = await fetch("./data/mbti.json", { cache: "no-store" });
-      if (!res.ok) throw new Error("HTTP " + res.status);
-      const json = await res.json();
-      MBTI = json || {};
-    } catch (e) {
-      console.error(e);
-      toast("⚠️ 讀取 data/mbti.json 失敗（路徑或 JSON 格式）");
-      MBTI = {};
-    }
-  }
-
-  function guardData() {
-    // 確保至少有 16 型中的一部分可用
-    const hasAny = MBTI_CODES.some((c) => !!MBTI[c]);
-    if (!hasAny) {
-      // 如果你 json 目前只有部分型別，至少不讓功能爆炸
-      // 但會提醒
-      console.warn("mbti.json does not contain standard 16 types (or fetch failed).");
-    }
-  }
-
-  function initGlobals() {
-    // 讓輸入自動大寫
-    const typeInput = $("#typeInput");
-    typeInput?.addEventListener("input", () => {
-      const v = normalizeType(typeInput.value);
-      typeInput.value = v;
-    });
-
-    // 點 dockPair 時，active 樣式維持（你 CSS 若有）
-    $("#dockPair")?.addEventListener("click", () => {
-      $$(".dock-btn").forEach((b) => b.classList.remove("active"));
-      $("#dockPair")?.classList.add("active");
-    });
-    $("#dockNotebook")?.addEventListener("click", () => {
-      $$(".dock-btn").forEach((b) => b.classList.remove("active"));
-      $("#dockNotebook")?.classList.add("active");
-    });
-  }
-
-  async function init() {
-    ensureToast();
-    initBearChat();
-
-    // load data first
-    await loadMBTI();
-    guardData();
-
-    initGlobals();
-    initDock();
-    initTypeSearch();
-    initTestLink();
-    initPair();
-    initNotebook();
-
-    // 初始泡泡
-    setBubble("點一下熊熊，我會跟你聊天 🫶");
-  }
-
-  // start
-  if (document.readyState === "loading") {
-    document.addEventListener("DOMContentLoaded", init);
-  } else {
-    init();
-  }
-})();
+// Service Worker
+if ("serviceWorker" in navigator) {
+  window.addEventListener("load", () => {
+    navigator.serviceWorker.register("./sw.js").catch(()=>{});
+  });
+}
