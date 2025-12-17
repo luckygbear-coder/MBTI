@@ -1,606 +1,1156 @@
-import ROLES from "./roles.js";
-import BOARDS from "./boards.js";
+/* =========================================================
+   MBTI熊｜app.js（對應你提供的 index.html）
+   - 讀取 ./data/mbti.json
+   - 人格查詢 / 隨機 / 詳細解說（Modal）
+   - 配對分析（職場/親密）+ 行動清單（3條）+ 一鍵存筆記本
+   - 筆記本：新增人物 / 生成溝通建議 / 搜尋&分類 / 匯出匯入 / 清空
+   - 熊熊小語：點頭像換句、長按複製
+   ========================================================= */
 
-/* ======================
-   全域遊戲狀態（讓 index.html 的紀錄可讀）
-====================== */
-export const Game = {
-  boardId: null,
-  board: null,
-  players: [],
-  phase: "setup", // setup | deal | night | day
-  dealIndex: 0,
+(() => {
+  "use strict";
 
-  nightStepIndex: 0,
-  nightSteps: [],
-  logs: [],
+  /* ----------------------------
+   * DOM helpers
+   * ---------------------------- */
+  const $ = (sel, root = document) => root.querySelector(sel);
+  const $$ = (sel, root = document) => Array.from(root.querySelectorAll(sel));
 
-  settings: {
-    playerCount: 9
-  },
+  const clamp = (n, a, b) => Math.max(a, Math.min(b, n));
+  const nowISO = () => new Date().toISOString();
 
-  night: {
-    wolfTarget: null,
-    guardTarget: null,
-    seerTarget: null,
-    seerResult: null,
-    witchSave: false,
-    witchPoisonTarget: null
-  }
-};
-// 讓 index.html 的 showLogs() 能抓到
-window.Game = Game;
-
-/* ======================
-   角色配置（9～12 + 各板子預設）
-   你之後要調整，只改這裡就好
-====================== */
-const PRESETS = {
-  basic: {
-    9:  { werewolf: 2, villager: 5, seer: 1, witch: 1, hunter: 0, guard: 0 },
-    10: { werewolf: 3, villager: 5, seer: 1, witch: 1, hunter: 0, guard: 0 },
-    11: { werewolf: 3, villager: 5, seer: 1, witch: 1, hunter: 1, guard: 0 },
-    12: { werewolf: 3, villager: 5, seer: 1, witch: 1, hunter: 1, guard: 1 }
-  },
-
-  wolfKings: {
-    10: { werewolf: 2, whiteWolfKing: 1, blackWolfKing: 1, villager: 4, seer: 1, witch: 1 },
-    11: { werewolf: 2, whiteWolfKing: 1, blackWolfKing: 1, villager: 5, seer: 1, witch: 1 },
-    12: { werewolf: 2, whiteWolfKing: 1, blackWolfKing: 1, villager: 6, seer: 1, witch: 1 }
-  },
-
-  lovers: {
-    9:  { werewolf: 2, villager: 4, seer: 1, witch: 1, cupid: 1, admirer: 0 },
-    10: { werewolf: 3, villager: 4, seer: 1, witch: 1, cupid: 1, admirer: 0 },
-    11: { werewolf: 3, villager: 5, seer: 1, witch: 1, cupid: 1, admirer: 0 },
-    12: { werewolf: 3, villager: 5, seer: 1, witch: 1, cupid: 1, admirer: 1 }
-  },
-
-  control: {
-    10: { werewolf: 3, villager: 3, seer: 1, witch: 1, elder: 1, dreamer: 1, magician: 0 },
-    11: { werewolf: 3, villager: 4, seer: 1, witch: 1, elder: 1, dreamer: 1, magician: 0 },
-    12: { werewolf: 3, villager: 4, seer: 1, witch: 1, elder: 1, dreamer: 1, magician: 1 }
-  },
-
-  chaos: {
-    10: { werewolf: 3, villager: 2, seer: 1, witch: 1, marketDealer: 1, lucky: 1, idiot: 1, demonHunter: 0 },
-    11: { werewolf: 3, villager: 3, seer: 1, witch: 1, marketDealer: 1, lucky: 1, idiot: 1, demonHunter: 0 },
-    12: { werewolf: 3, villager: 3, seer: 1, witch: 1, marketDealer: 1, lucky: 1, idiot: 1, demonHunter: 1 }
-  }
-};
-
-/* ======================
-   啟動：一進頁面就顯示「選板子」
-====================== */
-document.addEventListener("DOMContentLoaded", () => {
-  renderSetup();
-});
-
-/* ======================
-   Setup UI（像手機 App 一樣）
-====================== */
-function renderSetup(selectedBoardId = Game.boardId || "basic") {
-  Game.phase = "setup";
-  Game.boardId = selectedBoardId;
-  Game.board = BOARDS[selectedBoardId];
-
-  // 可選人數：取板子支援的 players（我們 boards.js 有 players: [9..]）
-  const counts = Game.board.players || [9, 10, 11, 12];
-
-  // 若目前人數不在可選範圍，修正成第一個
-  if (!counts.includes(Game.settings.playerCount)) {
-    Game.settings.playerCount = counts[0];
-  }
-
-  const boardCards = Object.values(BOARDS)
-    .map(b => {
-      const active = b.id === selectedBoardId ? "active" : "";
-      return `
-        <button class="board-card ${active}" onclick="selectBoard('${b.id}')">
-          <div class="board-title">${b.name}</div>
-          <div class="board-intro">${b.intro || ""}</div>
-          <div class="board-meta">
-            適合人數：${(b.players || []).join("–")}
-            ・女巫自救：${b.rules?.witchSelfSave === "forbidden" ? "不允許" : "允許"}
-          </div>
-        </button>
-      `;
-    })
-    .join("");
-
-  const countButtons = counts
-    .map(n => {
-      const active = n === Game.settings.playerCount ? "active" : "";
-      return `<button class="pill ${active}" onclick="setPlayerCount(${n})">${n} 人</button>`;
-    })
-    .join("");
-
-  const roleSummary = presetSummary(selectedBoardId, Game.settings.playerCount);
-
-  document.getElementById("main").innerHTML = `
-    <section class="panel">
-      <h2 class="h2">請選擇板子開始遊戲</h2>
-      <div class="grid">${boardCards}</div>
-    </section>
-
-    <section class="panel">
-      <h3 class="h3">玩家人數</h3>
-      <div class="row">${countButtons}</div>
-      <div class="hint">（可先用預設配置開局，之後再做手動微調功能）</div>
-    </section>
-
-    <section class="panel">
-      <h3 class="h3">本局角色配置（預設）</h3>
-      <div class="card">${roleSummary}</div>
-      <button class="primary" onclick="startDeal()">開始抽牌（輪流看身分）</button>
-    </section>
-  `;
-}
-
-// 讓 index.html 也能呼叫（你底部有角色圖鑑、紀錄）
-window.selectBoard = (id) => renderSetup(id);
-window.setPlayerCount = (n) => {
-  Game.settings.playerCount = n;
-  renderSetup(Game.boardId);
-};
-
-function presetSummary(boardId, count) {
-  const preset = PRESETS[boardId]?.[count];
-  if (!preset) return `⚠️ 這個板子目前沒有 ${count} 人的預設配置（請改選其他人數或先用基本板）。`;
-
-  const parts = Object.entries(preset)
-    .filter(([, v]) => v > 0)
-    .map(([roleId, v]) => `${ROLES[roleId]?.name || roleId} × ${v}`)
-    .join("、");
-
-  return parts;
-}
-
-/* ======================
-   產生 roleList（依預設配置）
-====================== */
-function buildRoleList(boardId, count) {
-  const preset = PRESETS[boardId]?.[count];
-  if (!preset) throw new Error("找不到此板子的人數預設配置");
-
-  const list = [];
-  for (const [roleId, qty] of Object.entries(preset)) {
-    for (let i = 0; i < qty; i++) list.push(roleId);
-  }
-  // 安全檢查：總數要等於玩家數
-  if (list.length !== count) {
-    throw new Error(`角色數量(${list.length})不等於玩家數(${count})，請檢查 PRESETS。`);
-  }
-  return shuffle(list);
-}
-
-/* ======================
-   抽牌（Pass & Play）
-====================== */
-window.startDeal = function () {
-  Game.board = BOARDS[Game.boardId];
-  Game.players = createPlayers(Game.settings.playerCount, buildRoleList(Game.boardId, Game.settings.playerCount));
-  Game.phase = "deal";
-  Game.dealIndex = 0;
-  renderDeal();
-};
-
-function renderDeal() {
-  const p = Game.players[Game.dealIndex];
-  document.getElementById("main").innerHTML = `
-    <section class="panel">
-      <h2 class="h2">請 ${p.seat} 號拿手機</h2>
-      <div class="hint">按下後會顯示你的身分，請看完交給下一位。</div>
-      <button class="primary" onclick="showRole()">查看身分</button>
-      <button class="ghost" onclick="backToSetup()">返回選板子</button>
-    </section>
-  `;
-}
-
-window.backToSetup = function () {
-  renderSetup(Game.boardId);
-};
-
-window.showRole = function () {
-  const p = Game.players[Game.dealIndex];
-  const role = ROLES[p.roleId];
-  alert(`你是【${role.name}】\n\n${role.skill}`);
-
-  Game.dealIndex++;
-  if (Game.dealIndex >= Game.players.length) {
-    startNight();
-  } else {
-    renderDeal();
-  }
-};
-
-/* ======================
-   夜晚流程
-====================== */
-function startNight() {
-  Game.phase = "night";
-  Game.nightStepIndex = 0;
-  Game.night = {
-    wolfTarget: null,
-    guardTarget: null,
-    seerTarget: null,
-    seerResult: null,
-    witchSave: false,
-    witchPoisonTarget: null
+  /* ----------------------------
+   * LocalStorage
+   * ---------------------------- */
+  const LS = {
+    lastType: "mbtiBear:lastType",
+    testUrl: "mbtiBear:testUrl",
+    notebook: "mbtiBear:notebook", // { people:[], pairs:[] }
   };
-  Game.nightSteps = (Game.board.nightOrder || []).slice();
-  renderNightStep();
-}
 
-function renderNightStep() {
-  const step = Game.nightSteps[Game.nightStepIndex];
-  if (!step) {
-    resolveNight();
-    return;
-  }
+  const safeParse = (s, fallback) => {
+    try {
+      const v = JSON.parse(s);
+      return v ?? fallback;
+    } catch {
+      return fallback;
+    }
+  };
 
-  const stepTitle = {
-    guard: "守衛",
-    werewolf: "狼人",
-    seer: "預言家",
-    witch: "女巫",
-    cupid: "邱比特",
-    admirer: "暗戀者",
-    elder: "禁言長老",
-    dreamer: "攝夢人",
-    magician: "魔術師"
-  }[step] || step;
+  const loadLS = (k, fallback) => safeParse(localStorage.getItem(k), fallback);
+  const saveLS = (k, v) => localStorage.setItem(k, JSON.stringify(v));
 
-  // 上帝帶流程提示（像主持稿）
-  const scriptLine = {
-    guard: "請說：守衛請睜眼，你要守誰？",
-    werewolf: "請說：狼人請睜眼，你們要刀誰？",
-    seer: "請說：預言家請睜眼，你要查驗誰？",
-    witch: "請說：女巫請睜眼。",
-    cupid: "請說：邱比特請睜眼，請指定兩位成為情侶。",
-    admirer: "請說：暗戀者請睜眼，你要暗戀誰？",
-    elder: "請說：禁言長老請睜眼，你要禁言誰？",
-    dreamer: "請說：攝夢人請睜眼，你要讓誰進入夢境？",
-    magician: "請說：魔術師請睜眼，你要交換哪兩位？"
-  }[step] || "";
-
-  document.getElementById("main").innerHTML = `
-    <section class="panel">
-      <div class="tag">🌙 夜晚步驟 ${Game.nightStepIndex + 1}/${Game.nightSteps.length}</div>
-      <h2 class="h2">${stepTitle}行動</h2>
-      ${scriptLine ? `<div class="script">${scriptLine}</div>` : ""}
-      <div id="stepBody"></div>
-      <button class="ghost" onclick="forceNextNight()">跳過這一步</button>
-    </section>
-  `;
-
-  // 渲染各步驟操作
-  switch (step) {
-    case "guard":
-      pickTarget("stepBody", "守衛守誰？", "guardTarget");
-      break;
-    case "werewolf":
-      pickTarget("stepBody", "狼人刀誰？", "wolfTarget");
-      break;
-    case "seer":
-      pickTarget("stepBody", "預言家驗誰？", "seerTarget", true);
-      break;
-    case "witch":
-      renderWitch("stepBody");
-      break;
-    default:
-      // 其他特殊角色先做「可選目標」的通用版本（不影響你後續擴充）
-      pickTarget("stepBody", `${stepTitle}選擇目標`, `__${step}_target`);
-      break;
-  }
-}
-
-window.forceNextNight = function () {
-  nextNightStep();
-};
-
-function nextNightStep() {
-  Game.nightStepIndex++;
-  renderNightStep();
-}
-
-function pickTarget(containerId, title, key, reveal = false) {
-  const container = document.getElementById(containerId);
-  const buttons = Game.players
-    .filter(p => p.alive)
-    .map(p => `<button class="seat" onclick="confirmTarget('${key}', ${p.seat}, ${reveal ? "true" : "false"})">${p.seat}</button>`)
-    .join("");
-
-  container.innerHTML = `
-    <div class="hint">${title}</div>
-    <div class="seats">${buttons}</div>
-  `;
-}
-
-window.confirmTarget = function (key, seat, reveal) {
-  Game.night[key] = seat;
-
-  if (reveal) {
-    const target = Game.players.find(p => p.seat === seat);
-    const team = ROLES[target.roleId].team === "wolf" ? "狼人" : "好人";
-    Game.night.seerResult = team;
-    alert(`查驗結果：${seat} 號是【${team}】`);
-  }
-  nextNightStep();
-};
-
-function renderWitch(containerId) {
-  const container = document.getElementById(containerId);
-  const wolfTarget = Game.night.wolfTarget;
-  const witchSeat = Game.players.find(p => p.alive && ROLES[p.roleId].id === "witch")?.seat;
-
-  const cannotSelfSave =
-    wolfTarget && witchSeat && wolfTarget === witchSeat && Game.board.rules?.witchSelfSave === "forbidden";
-
-  container.innerHTML = `
-    <div class="hint">今晚被刀：<b>${wolfTarget ? wolfTarget + " 號" : "無"}</b></div>
-    ${cannotSelfSave ? `<div class="warn">本板子規則：女巫不可自救（解藥鎖定）</div>` : ""}
-
-    <div class="row">
-      <button class="primary" ${cannotSelfSave || !wolfTarget ? "disabled" : ""} onclick="witchSave()">用解藥</button>
-      <button class="primary" onclick="witchPoisonPick()">用毒藥</button>
-      <button class="ghost" onclick="nextNightStep()">不用</button>
-    </div>
-  `;
-}
-
-window.witchSave = function () {
-  Game.night.witchSave = true;
-  nextNightStep();
-};
-
-window.witchPoisonPick = function () {
-  pickTarget("stepBody", "女巫毒誰？", "witchPoisonTarget");
-};
-
-/* ======================
-   夜晚結算
-====================== */
-function resolveNight() {
-  const deaths = new Set();
-
-  // 狼刀判定
-  if (Game.night.wolfTarget) {
-    const blocked =
-      Game.night.wolfTarget === Game.night.guardTarget ||
-      Game.night.witchSave;
-    if (!blocked) deaths.add(Game.night.wolfTarget);
-  }
-
-  // 毒藥判定
-  if (Game.night.witchPoisonTarget) deaths.add(Game.night.witchPoisonTarget);
-
-  // 執行死亡
-  deaths.forEach(seat => killPlayer(seat, Game.night.witchPoisonTarget === seat ? "poison" : "night"));
-
-  const deathList = [...deaths].map(s => `${s} 號`).join("、") || "沒有人";
-  const announce = `天亮了，昨晚死亡的是：${deathList}`;
-  Game.logs.push(announce);
-
-  startDay(announce);
-}
-
-/* ======================
-   死亡處理（黑狼王/白狼王 先保留鉤子）
-====================== */
-function killPlayer(seat, reason) {
-  const p = Game.players.find(x => x.seat === seat);
-  if (!p || !p.alive) return;
-  p.alive = false;
-
-  const role = ROLES[p.roleId];
-
-  // 黑狼王：非毒殺、非自爆（此版本未做自爆按鈕，reason=explode 預留）
-  if (role.id === "blackWolfKing") {
-    if (reason !== "poison" && reason !== "explode") {
-      alert("黑狼王可發動【狼王之爪】（類似獵人）");
-      // 先用簡化：立刻選帶走對象並死亡
-      pickTarget("main", "黑狼王要帶走誰？", "__blackWolfClaw");
-      // 注意：這裡先不 nextNightStep，因為可能在結算階段
-      window.confirmTarget = function (key, targetSeat) {
-        // 帶走
-        const tp = Game.players.find(x => x.seat === targetSeat);
-        if (tp && tp.alive) {
-          tp.alive = false;
-          Game.logs.push(`黑狼王臨死帶走：${targetSeat} 號`);
-        }
-        startDay(`天亮了（含狼王技能結算），請查看紀錄`);
-      };
+  /* ----------------------------
+   * Clipboard
+   * ---------------------------- */
+  async function copyText(text) {
+    try {
+      await navigator.clipboard.writeText(text);
+      toast("✅ 已複製到剪貼簿");
+      return true;
+    } catch {
+      // fallback
+      const ta = document.createElement("textarea");
+      ta.value = text;
+      ta.style.position = "fixed";
+      ta.style.left = "-9999px";
+      document.body.appendChild(ta);
+      ta.select();
+      try {
+        document.execCommand("copy");
+        toast("✅ 已複製到剪貼簿");
+        return true;
+      } catch {
+        toast("⚠️ 複製失敗，請手動複製");
+        return false;
+      } finally {
+        document.body.removeChild(ta);
+      }
     }
   }
 
-  // 白狼王：通常是白天被票出才觸發（reason=vote 預留）
-  if (role.id === "whiteWolfKing" && reason === "vote") {
-    alert("白狼王發動技能（被放逐時可帶走一人）");
+  /* ----------------------------
+   * Toast（如果你 style.css 沒有 #toast，會自動建立）
+   * ---------------------------- */
+  let toastTimer = null;
+  function ensureToast() {
+    let el = $("#toast");
+    if (el) return el;
+    el = document.createElement("div");
+    el.id = "toast";
+    el.style.position = "fixed";
+    el.style.left = "50%";
+    el.style.bottom = "84px";
+    el.style.transform = "translateX(-50%)";
+    el.style.padding = "10px 12px";
+    el.style.borderRadius = "999px";
+    el.style.background = "rgba(0,0,0,0.75)";
+    el.style.color = "#fff";
+    el.style.fontSize = "13px";
+    el.style.zIndex = "9999";
+    el.style.opacity = "0";
+    el.style.pointerEvents = "none";
+    el.style.transition = "opacity .18s ease";
+    document.body.appendChild(el);
+    return el;
   }
-}
+  function toast(msg) {
+    const el = ensureToast();
+    el.textContent = msg;
+    el.style.opacity = "1";
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => (el.style.opacity = "0"), 1500);
+  }
 
-/* ======================
-   白天（含發言倒數）
-====================== */
-function startDay(announceText) {
-  Game.phase = "day";
-  document.getElementById("main").innerHTML = `
-    <section class="panel">
-      <div class="tag">☀️ 白天</div>
-      <div class="card">
-        <div style="font-weight:800;margin-bottom:6px;">公告</div>
-        <div>${escapeHtml(announceText)}</div>
-        <div class="row" style="margin-top:10px;">
-          <button class="ghost" onclick="copyText(${JSON.stringify(announceText)})">一鍵複製公告</button>
-          <button class="ghost" onclick="startNight()">進入下一夜</button>
-        </div>
-      </div>
+  /* ----------------------------
+   * Data
+   * ---------------------------- */
+  const MBTI_CODES = [
+    "ISTJ","ISFJ","INFJ","INTJ",
+    "ISTP","ISFP","INFP","INTP",
+    "ESTP","ESFP","ENFP","ENTP",
+    "ESTJ","ESFJ","ENFJ","ENTJ",
+  ];
 
-      <div class="card">
-        <div style="font-weight:800;margin-bottom:6px;">🕒 白天發言倒數</div>
-        <div class="row">
-          <button class="pill" onclick="setSpeechMinutes(1)">1 分</button>
-          <button class="pill" onclick="setSpeechMinutes(2)">2 分</button>
-          <button class="pill" onclick="setSpeechMinutes(3)">3 分</button>
-          <button class="pill" onclick="setSpeechMinutes(5)">5 分</button>
-        </div>
+  let MBTI = {}; // from ./data/mbti.json
 
-        <div id="speechTimerDisplay" class="timer">02:00</div>
+  function isValidType(code) {
+    return MBTI_CODES.includes(code);
+  }
 
-        <div class="row">
-          <button class="primary" onclick="startSpeechTimer()">開始</button>
-          <button class="ghost" onclick="pauseSpeechTimer()">暫停</button>
-          <button class="ghost" onclick="resetSpeechTimer()">重置</button>
-        </div>
-      </div>
+  function normalizeType(input) {
+    return String(input || "")
+      .trim()
+      .toUpperCase()
+      .replace(/[^A-Z]/g, "")
+      .slice(0, 4);
+  }
 
-      <div class="card">
-        <div style="font-weight:800;margin-bottom:6px;">👥 存活座位</div>
-        <div class="seats">
-          ${Game.players.map(p => `<span class="seat-chip ${p.alive ? "" : "dead"}">${p.seat}</span>`).join("")}
-        </div>
-        <div class="hint">（上帝模式之後我可以再幫你加：點座位看身分）</div>
-      </div>
-    </section>
-  `;
+  function getTypeObj(code) {
+    return MBTI[code] || null;
+  }
 
-  // 初始顯示更新
-  updateSpeechTimerDisplay();
-}
+  function typeLabel(code) {
+    const o = getTypeObj(code);
+    return o ? `${code}｜${o.name}` : code;
+  }
 
-/* ======================
-   白天發言倒數計時器
-====================== */
-const speechTimer = {
-  duration: 120,
-  remaining: 120,
-  running: false,
-  intervalId: null
-};
+  /* ----------------------------
+   * 熊熊小語
+   * ---------------------------- */
+  const BEAR_QUOTES = [
+    "🐻 你願意理解自己，就是一種勇敢。",
+    "🐻 不用急著變成誰，你先好好做你。",
+    "🐻 先把今天過好，明天就會比較溫柔。",
+    "🐻 你不是太敏感，你只是感受很準。",
+    "🐻 如果累了，先休息一下也沒關係。",
+    "🐻 不是每次都要贏，有時候要被抱抱。",
+    "🐻 先說需求，不用先道歉。",
+    "🐻 你很努力了，真的。",
+    "🐻 把關係當隊友，不是對手。",
+    "🐻 你可以慢慢來，我在。",
+  ];
 
-window.setSpeechMinutes = function (min) {
-  if (speechTimer.running) return;
-  speechTimer.duration = min * 60;
-  speechTimer.remaining = min * 60;
-  updateSpeechTimerDisplay();
-};
+  function randomPick(arr) {
+    return arr[Math.floor(Math.random() * arr.length)];
+  }
 
-window.startSpeechTimer = function () {
-  if (speechTimer.running) return;
-  speechTimer.running = true;
+  function setBubble(text) {
+    const bubble = $("#bubble");
+    if (!bubble) return;
+    bubble.textContent = text;
+  }
 
-  speechTimer.intervalId = setInterval(() => {
-    speechTimer.remaining--;
-    if (speechTimer.remaining <= 0) {
-      speechTimer.remaining = 0;
-      pauseSpeechTimer();
-      updateSpeechTimerDisplay();
-      alert("⏰ 發言時間到！");
+  function initBearChat() {
+    const bearBtn = $("#bearBtn");
+    const bubble = $("#bubble");
+    if (!bearBtn || !bubble) return;
+
+    // 點一下換句
+    bearBtn.addEventListener("click", () => {
+      setBubble(randomPick(BEAR_QUOTES));
+    });
+
+    // 長按複製 bubble 文字
+    let pressTimer = null;
+    const pressMs = 350;
+
+    const startPress = () => {
+      clearTimeout(pressTimer);
+      pressTimer = setTimeout(() => {
+        copyText(bubble.textContent || "");
+      }, pressMs);
+    };
+    const endPress = () => clearTimeout(pressTimer);
+
+    bubble.addEventListener("touchstart", startPress, { passive: true });
+    bubble.addEventListener("touchend", endPress);
+    bubble.addEventListener("touchcancel", endPress);
+    bubble.addEventListener("mousedown", startPress);
+    bubble.addEventListener("mouseup", endPress);
+    bubble.addEventListener("mouseleave", endPress);
+  }
+
+  /* ----------------------------
+   * Modal helpers（對應你的結構：data-close="1"）
+   * ---------------------------- */
+  function openModal(modalEl) {
+    if (!modalEl) return;
+    modalEl.classList.add("open");
+    modalEl.setAttribute("aria-hidden", "false");
+    document.body.classList.add("modal-open");
+  }
+  function closeModal(modalEl) {
+    if (!modalEl) return;
+    modalEl.classList.remove("open");
+    modalEl.setAttribute("aria-hidden", "true");
+    document.body.classList.remove("modal-open");
+  }
+  function bindModalClose(modalEl) {
+    if (!modalEl) return;
+    modalEl.addEventListener("click", (e) => {
+      const t = e.target;
+      if (t && t.getAttribute && t.getAttribute("data-close") === "1") {
+        closeModal(modalEl);
+      }
+    });
+    document.addEventListener("keydown", (e) => {
+      if (e.key === "Escape" && modalEl.classList.contains("open")) closeModal(modalEl);
+    });
+  }
+
+  /* ----------------------------
+   * Populate selects
+   * ---------------------------- */
+  function fillSelect(selectEl, { includeEmpty = false } = {}) {
+    if (!selectEl) return;
+    selectEl.innerHTML = "";
+
+    if (includeEmpty) {
+      const op = document.createElement("option");
+      op.value = "";
+      op.textContent = "請選擇…";
+      selectEl.appendChild(op);
+    }
+
+    MBTI_CODES.forEach((code) => {
+      const op = document.createElement("option");
+      op.value = code;
+      op.textContent = typeLabel(code);
+      selectEl.appendChild(op);
+    });
+  }
+
+  /* ----------------------------
+   * Render: Type detail
+   * ---------------------------- */
+  function renderTypeDetail(code) {
+    const o = getTypeObj(code);
+    const titleEl = $("#modalTypeTitle");
+    const contentEl = $("#modalTypeContent");
+    if (!titleEl || !contentEl) return;
+
+    if (!o) {
+      titleEl.textContent = "人格詳細解說";
+      contentEl.innerHTML = `<div class="hint">找不到 <b>${code}</b> 的資料，請確認 data/mbti.json 是否包含此型。</div>`;
       return;
     }
-    updateSpeechTimerDisplay();
-  }, 1000);
-};
 
-window.pauseSpeechTimer = function () {
-  speechTimer.running = false;
-  clearInterval(speechTimer.intervalId);
-  speechTimer.intervalId = null;
-};
+    const tags = (o.tags || []).map((t) => `<span class="chip">${t}</span>`).join(" ");
 
-window.resetSpeechTimer = function () {
-  pauseSpeechTimer();
-  speechTimer.remaining = speechTimer.duration;
-  updateSpeechTimerDisplay();
-};
+    const list = (arr) =>
+      (arr || []).length
+        ? `<ul>${arr.map((x) => `<li>${escapeHTML(String(x))}</li>`).join("")}</ul>`
+        : `<div class="hint small">（尚未填寫）</div>`;
 
-function updateSpeechTimerDisplay() {
-  const el = document.getElementById("speechTimerDisplay");
-  if (!el) return;
+    const section = (ttl, html) => `
+      <div class="section-title" style="margin-top:10px;">${ttl}</div>
+      <div class="card-soft" style="padding:10px;">${html}</div>
+    `;
 
-  const m = Math.floor(speechTimer.remaining / 60);
-  const s = speechTimer.remaining % 60;
-  el.textContent = `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
+    titleEl.textContent = `${code}｜${o.name}`;
 
-  el.classList.toggle("danger", speechTimer.remaining <= 10 && speechTimer.remaining > 0);
-}
+    contentEl.innerHTML = `
+      <div class="card-soft" style="padding:10px;">
+        <div style="font-weight:800; font-size:14px;">${escapeHTML(o.traits || "")}</div>
+        <div style="margin-top:8px; display:flex; gap:6px; flex-wrap:wrap;">${tags}</div>
+      </div>
 
-/* ======================
-   玩家建立 + 工具
-====================== */
-function createPlayers(count, roleList) {
-  return Array.from({ length: count }, (_, i) => ({
-    seat: i + 1,
-    roleId: roleList[i],
-    alive: true,
-    isChief: false,
-    status: {}
-  }));
-}
-
-function shuffle(arr) {
-  const a = [...arr];
-  for (let i = a.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [a[i], a[j]] = [a[j], a[i]];
+      ${section("🌟 優勢", list(o.strengths))}
+      ${section("⚠️ 盲點", list(o.blindspots))}
+      ${section("💼 適合工作", list(o.work))}
+      ${section("🧰 職場提醒", list(o.workTips))}
+      ${section("💞 親密關係提醒", list(o.loveTips))}
+      ${section("🐻 熊熊一句話", `<div style="line-height:1.6;">${escapeHTML(o.bear || "")}</div>`)}
+    `;
   }
-  return a;
-}
 
-window.copyText = async function (txt) {
-  try {
-    await navigator.clipboard.writeText(txt);
-    alert("已複製 ✅");
-  } catch {
-    alert("複製失敗（iOS 有時會限制，請長按自行複製）");
+  function escapeHTML(s) {
+    return s
+      .replaceAll("&", "&amp;")
+      .replaceAll("<", "&lt;")
+      .replaceAll(">", "&gt;")
+      .replaceAll('"', "&quot;")
+      .replaceAll("'", "&#039;");
   }
-};
 
-function escapeHtml(str) {
-  return String(str)
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#039;");
-}
+  /* ----------------------------
+   * Pairing logic（簡單可用的相處指南）
+   * - 不是「命定配對」，是「溝通策略」
+   * ---------------------------- */
+  function dims(code) {
+    // E/I, S/N, T/F, J/P
+    return {
+      EI: code[0], // E/I
+      SN: code[1], // S/N
+      TF: code[2], // T/F
+      JP: code[3], // J/P
+    };
+  }
 
-/* ======================
-   補一點 UI class（讓它更像 App）
-   你不用改 style.css 也能先跑，
-   但建議我下一步幫你把 style.css 也加這些 class
-====================== */
-(function injectMiniStyles() {
-  const css = `
-  .panel{padding:14px}
-  .h2{margin:0 0 10px;font-size:22px}
-  .h3{margin:0 0 8px;font-size:16px;opacity:.85}
-  .hint{font-size:13px;opacity:.7;margin:6px 0}
-  .warn{background:#fff1f1;border:1px solid #f2b4b4;padding:10px;border-radius:10px;color:#7a1a1a;margin:8px 0;font-size:13px}
-  .tag{display:inline-block;padding:6px 10px;border-radius:999px;background:#fff;opacity:.85;font-size:12px;margin-bottom:10px}
-  .grid{display:grid;grid-template-columns:1fr;gap:10px}
-  .board-card{width:100%;text-align:left;border:0;border-radius:14px;padding:12px;background:#fff;box-shadow:0 3px 10px rgba(0,0,0,.08)}
-  .board-card.active{outline:2px solid #5a0000}
-  .board-title{font-weight:900;font-size:16px;margin-bottom:6px}
-  .board-intro{font-size:13px;opacity:.8;margin-bottom:6px}
-  .board-meta{font-size:12px;opacity:.65}
-  .row{display:flex;gap:8px;flex-wrap:wrap;margin:8px 0}
-  .pill{border:0;border-radius:999px;padding:10px 12px;background:#eee}
-  .pill.active{background:#5a0000;color:#fff}
-  .primary{width:100%;border:0;border-radius:14px;padding:14px 12px;background:#5a0000;color:#fff;font-weight:800}
-  .ghost{width:100%;border:1px solid #ddd;border-radius:14px;padding:12px;background:#fff}
-  .card{background:#fff;border-radius:14px;padding:12px;box-shadow:0 3px 10px rgba(0,0,0,.06)}
-  .seats{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px}
-  .seat{border:0;border-radius:12px;padding:12px 0;width:64px;background:#f0f0f0;font-weight:800}
-  .seat-chip{display:inline-flex;align-items:center;justify-content:center;width:36px;height:36px;border-radius:12px;background:#f0f0f0;font-weight:800}
-  .seat-chip.dead{opacity:.35;text-decoration:line-through}
-  .script{background:#fff7e6;border:1px solid #e7d2a6;border-radius:14px;padding:10px;font-size:13px;line-height:1.5}
-  .timer{font-size:42px;font-weight:900;text-align:center;padding:10px 0}
-  .timer.danger{color:#c62828;animation:blink 1s infinite}
-  @keyframes blink{50%{opacity:.25}}
-  `;
-  const style = document.createElement("style");
-  style.textContent = css;
-  document.head.appendChild(style);
+  function pairAnalysis(a, b, mode /* work|love */) {
+    const A = getTypeObj(a);
+    const B = getTypeObj(b);
+    const da = dims(a);
+    const db = dims(b);
+
+    const same = (k) => da[k] === db[k];
+    const diff = (k) => da[k] !== db[k];
+
+    const bullets = [];
+    const risks = [];
+    const tips = [];
+
+    // 核心差異解釋
+    if (diff("EI")) {
+      bullets.push(`能量節奏不同：${a} 偏 ${da.EI === "E" ? "外向" : "內向"}，${b} 偏 ${db.EI === "E" ? "外向" : "內向"}。`);
+      tips.push("約定『社交/獨處』的節奏：先說好頻率與充電方式。");
+    } else {
+      bullets.push("能量節奏相近：比較容易在相同頻率上相處。");
+      tips.push("一起建立固定儀式（例：每週一次深聊或一起玩）。");
+    }
+
+    if (diff("SN")) {
+      bullets.push(`資訊偏好不同：${da.SN === "S" ? `${a} 偏具體` : `${a} 偏抽象`}；${db.SN === "S" ? `${b} 偏具體` : `${b} 偏抽象`}。`);
+      risks.push("一方覺得對方太跳躍/太死板。");
+      tips.push("討論時先對齊：『我們在談事實還是談可能性？』");
+    } else {
+      bullets.push("理解世界方式相近：溝通摩擦相對少。");
+    }
+
+    if (diff("TF")) {
+      bullets.push(`決策重點不同：${da.TF === "T" ? `${a} 偏理性` : `${a} 偏感受`}；${db.TF === "T" ? `${b} 偏理性` : `${b} 偏感受`}。`);
+      risks.push("一方想解決問題、一方想被理解，容易錯頻。");
+      tips.push("先共感一句，再談解法（或先談解法，再補一個關心）。");
+    } else {
+      bullets.push("價值判斷語言相近：比較容易『講到同一種重點』。");
+    }
+
+    if (diff("JP")) {
+      bullets.push(`節奏控管不同：${da.JP === "J" ? `${a} 偏計畫` : `${a} 偏彈性`}；${db.JP === "J" ? `${b} 偏計畫` : `${b} 偏彈性`}。`);
+      risks.push("一方覺得對方太隨便/太控制。");
+      tips.push("用『底線 + 彈性區』：先定不可動的，再留可調整的。");
+    } else {
+      bullets.push("做事節奏相近：容易配合與同步。");
+    }
+
+    // 模式加權
+    if (mode === "work") {
+      tips.push("職場建議：用『結論→原因→下一步』，讓溝通可落地。");
+      tips.push("職場建議：把責任與交付寫清楚（避免腦補）。");
+    } else {
+      tips.push("親密建議：衝突先安撫，再討論對錯與方案。");
+      tips.push("親密建議：多做『確認』，少做『猜測測試』。");
+    }
+
+    // 帶入熊熊句
+    const bearLine = randomPick([
+      "🐻 熊熊提醒：配對不是分數，是『怎麼溝通會比較順』。",
+      "🐻 熊熊提醒：你們不是要變一樣，是要學會對方的語言。",
+      "🐻 熊熊提醒：看見差異，就是相處變好的開始。",
+    ]);
+
+    const headline = `${typeLabel(a)} × ${typeLabel(b)}（${mode === "work" ? "職場" : "親密"}）`;
+
+    return {
+      headline,
+      bullets,
+      risks,
+      tips,
+      bearLine,
+      summaryText:
+        `${headline}\n\n` +
+        `相處特性：\n- ${bullets.join("\n- ")}\n\n` +
+        (risks.length ? `可能卡點：\n- ${risks.join("\n- ")}\n\n` : "") +
+        `熊熊建議：\n- ${tips.join("\n- ")}\n\n` +
+        `${bearLine}`,
+    };
+  }
+
+  function actionList3(a, b, mode) {
+    // 3條「可做」的行動
+    const da = dims(a);
+    const db = dims(b);
+
+    const actions = [];
+
+    // 1) 對齊溝通格式
+    actions.push(mode === "work"
+      ? "✅ 每次討論先用一句話說結論，再補原因與下一步（避免講一圈沒共識）。"
+      : "✅ 衝突時先用一句話安撫（我懂你/我在），再談怎麼做（避免越吵越遠）。"
+    );
+
+    // 2) 對齊差異最大的維度
+    if (da.TF !== db.TF) {
+      actions.push("✅ 約定『先共感/先解法』的順序：一方先被理解，另一方再給方案。");
+    } else if (da.SN !== db.SN) {
+      actions.push("✅ 討論前先說清楚：現在談『事實細節』還是『方向可能性』，避免錯頻。");
+    } else if (da.JP !== db.JP) {
+      actions.push("✅ 用『底線＋彈性區』：把不可動的先定好，其餘留彈性（計畫派/隨性派都舒服）。");
+    } else {
+      actions.push("✅ 做一個共同小儀式（每週一次）：固定時間對齊近況與下一步，關係更穩。");
+    }
+
+    // 3) 節奏/能量照顧
+    if (da.EI !== db.EI) {
+      actions.push("✅ 約定充電方式：外向派要互動、內向派要空間，先說好就少誤會。");
+    } else {
+      actions.push("✅ 用同頻活動補能量：一起散步/一起做事/一起玩，讓關係自然變好。");
+    }
+
+    return actions.slice(0, 3);
+  }
+
+  /* ----------------------------
+   * Notebook storage model
+   * ---------------------------- */
+  function getNotebook() {
+    const nb = loadLS(LS.notebook, null);
+    if (nb && typeof nb === "object") {
+      return {
+        people: Array.isArray(nb.people) ? nb.people : [],
+        pairs: Array.isArray(nb.pairs) ? nb.pairs : [],
+      };
+    }
+    return { people: [], pairs: [] };
+  }
+
+  function saveNotebook(nb) {
+    saveLS(LS.notebook, nb);
+  }
+
+  /* ----------------------------
+   * Notebook render & filter
+   * ---------------------------- */
+  const noteState = {
+    filter: "all", // all|family|friend|coworker
+    q: "",
+  };
+
+  function matchesText(item, q) {
+    if (!q) return true;
+    const s = q.trim().toLowerCase();
+    const hay = JSON.stringify(item).toLowerCase();
+    return hay.includes(s);
+  }
+
+  function renderNotebookList() {
+    const listEl = $("#noteList");
+    if (!listEl) return;
+
+    const nb = getNotebook();
+    const q = noteState.q;
+    const filter = noteState.filter;
+
+    const people = nb.people
+      .filter((x) => filter === "all" || x.category === filter)
+      .filter((x) => matchesText(x, q))
+      .sort((a, b) => (b.createdAt || "").localeCompare(a.createdAt || ""));
+
+    const pairs = nb.pairs
+      .filter((x) => matchesText(x, q))
+      .sort((a, b) => (b.createdAt || "").localeCompare(a.createdAt || ""));
+
+    if (!people.length && !pairs.length) {
+      listEl.innerHTML = `<div class="hint">尚未新增任何筆記。</div>`;
+      return;
+    }
+
+    const personCard = (p) => `
+      <div class="card-soft" style="padding:10px; margin-bottom:10px;">
+        <div style="display:flex; justify-content:space-between; gap:10px;">
+          <div>
+            <div style="font-weight:900;">👤 ${escapeHTML(p.name || "（未命名）")}</div>
+            <div class="small" style="opacity:.85; margin-top:2px;">
+              ${escapeHTML(labelCategory(p.category))}｜<b>${escapeHTML(p.type || "")}</b>${p.zodiac ? `｜${escapeHTML(p.zodiac)}` : ""}
+            </div>
+          </div>
+          <div style="display:flex; gap:6px; flex-wrap:wrap; justify-content:flex-end;">
+            <button class="chip" data-act="copy" data-kind="person" data-id="${p.id}">複製</button>
+            <button class="chip" data-act="delete" data-kind="person" data-id="${p.id}">刪除</button>
+          </div>
+        </div>
+
+        ${p.memo ? `<div style="margin-top:8px; white-space:pre-wrap; line-height:1.6;">${escapeHTML(p.memo)}</div>` : `<div class="hint small" style="margin-top:8px;">（沒有備註）</div>`}
+
+        ${p.advice ? `<div style="margin-top:8px; padding-top:8px; border-top:1px dashed rgba(0,0,0,.15); white-space:pre-wrap; line-height:1.6;">${escapeHTML(p.advice)}</div>` : ""}
+      </div>
+    `;
+
+    const pairCard = (x) => `
+      <div class="card-soft" style="padding:10px; margin-bottom:10px;">
+        <div style="display:flex; justify-content:space-between; gap:10px;">
+          <div>
+            <div style="font-weight:900;">🤝 ${escapeHTML(x.title || "")}</div>
+            <div class="small" style="opacity:.85; margin-top:2px;">
+              ${escapeHTML(x.mode === "work" ? "職場" : "親密")}｜${escapeHTML(x.a)} × ${escapeHTML(x.b)}
+            </div>
+          </div>
+          <div style="display:flex; gap:6px; flex-wrap:wrap; justify-content:flex-end;">
+            <button class="chip" data-act="copy" data-kind="pair" data-id="${x.id}">複製</button>
+            <button class="chip" data-act="delete" data-kind="pair" data-id="${x.id}">刪除</button>
+          </div>
+        </div>
+
+        <div style="margin-top:8px; white-space:pre-wrap; line-height:1.6;">${escapeHTML(x.content || "")}</div>
+      </div>
+    `;
+
+    listEl.innerHTML = `
+      ${people.length ? `<div class="section-title">👤 人物筆記</div>${people.map(personCard).join("")}` : ""}
+      ${pairs.length ? `<div class="section-title" style="margin-top:10px;">🤝 配對紀錄</div>${pairs.map(pairCard).join("")}` : ""}
+    `;
+
+    // 綁定複製/刪除
+    listEl.querySelectorAll("[data-act]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const act = btn.getAttribute("data-act");
+        const kind = btn.getAttribute("data-kind");
+        const id = btn.getAttribute("data-id");
+        if (!id) return;
+
+        const nb2 = getNotebook();
+
+        if (act === "delete") {
+          if (kind === "person") nb2.people = nb2.people.filter((p) => p.id !== id);
+          if (kind === "pair") nb2.pairs = nb2.pairs.filter((p) => p.id !== id);
+          saveNotebook(nb2);
+          toast("🗑️ 已刪除");
+          renderNotebookList();
+          return;
+        }
+
+        if (act === "copy") {
+          if (kind === "person") {
+            const p = nb2.people.find((x) => x.id === id);
+            if (!p) return;
+            const text =
+              `👤 ${p.name}\n分類：${labelCategory(p.category)}\nMBTI：${p.type}\n星座：${p.zodiac || "（無）"}\n備註：\n${p.memo || "（無）"}\n` +
+              (p.advice ? `\n溝通建議：\n${p.advice}\n` : "");
+            copyText(text);
+          }
+          if (kind === "pair") {
+            const x = nb2.pairs.find((y) => y.id === id);
+            if (!x) return;
+            copyText(x.content || "");
+          }
+        }
+      });
+    });
+  }
+
+  function labelCategory(cat) {
+    if (cat === "family") return "家人";
+    if (cat === "friend") return "朋友";
+    if (cat === "coworker") return "同事";
+    return "其他";
+  }
+
+  /* ----------------------------
+   * 人物溝通建議（noteAdviceBtn）
+   * ---------------------------- */
+  function genAdviceForPerson(name, type, memo) {
+    const o = getTypeObj(type);
+    const base = o
+      ? [
+          `對象：${name || "（未命名）"}｜${type}（${o.name}）`,
+          "",
+          `先抓重點：${o.traits || ""}`,
+          "",
+          "🗣️ 溝通建議（你可以直接照做）：",
+          `1) 先用一句話確認對方狀態：例如「我懂你現在可能有點${o.tags?.[0] || "在意"}，我在。」`,
+          `2) 再用對方偏好的語言說重點：${type[2] === "T" ? "給結論/理由/選項" : "給感受/關心/安全感"}`,
+          `3) 最後給一個可選擇的下一步：例如「我們要不要先…？」`,
+          "",
+          "⚠️ 可能地雷：",
+          `- ${o.blindspots?.[0] || "不要用貼標籤方式否定"}`,
+          "",
+          "🐻 熊熊提醒：不要追求一次講完，追求『一次更靠近一點點』。",
+        ]
+      : [
+          `對象：${name || "（未命名）"}｜${type || "（未填 MBTI）"}`,
+          "",
+          "🗣️ 溝通建議：",
+          "1) 先問對方需要：要『安慰』還是『解法』？",
+          "2) 把期待說清楚（時間、方式、底線）。",
+          "3) 用一句話收尾確認：『所以我們就先這樣做，可以嗎？』",
+        ];
+
+    if (memo && memo.trim()) {
+      base.push("");
+      base.push("📌 你備註的重點（我幫你放進策略裡）：");
+      base.push(memo.trim());
+    }
+    return base.join("\n");
+  }
+
+  /* ----------------------------
+   * Main interactions
+   * ---------------------------- */
+  function initTypeSearch() {
+    const typeInput = $("#typeInput");
+    const goTypeBtn = $("#goTypeBtn");
+    const typeSelect = $("#typeSelect");
+    const randomBtn = $("#randomBtn");
+    const openDetailBtn = $("#openDetailBtn");
+
+    const modalType = $("#modalType");
+    bindModalClose(modalType);
+
+    // populate select
+    fillSelect(typeSelect, { includeEmpty: false });
+
+    // restore last type
+    const lastType = loadLS(LS.lastType, "INFP");
+    if (typeInput) typeInput.value = lastType;
+    if (typeSelect) typeSelect.value = isValidType(lastType) ? lastType : MBTI_CODES[0];
+
+    const applyType = (code) => {
+      const t = normalizeType(code);
+      if (!isValidType(t)) {
+        toast("⚠️ 請輸入正確 MBTI（例如 INFP）");
+        return null;
+      }
+      if (typeInput) typeInput.value = t;
+      if (typeSelect) typeSelect.value = t;
+      saveLS(LS.lastType, t);
+      return t;
+    };
+
+    goTypeBtn?.addEventListener("click", () => {
+      const t = applyType(typeInput?.value);
+      if (!t) return;
+      toast(`✅ 已選擇 ${t}`);
+    });
+
+    typeInput?.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") goTypeBtn?.click();
+    });
+
+    typeSelect?.addEventListener("change", () => {
+      const t = applyType(typeSelect.value);
+      if (!t) return;
+      toast(`✅ 已選擇 ${t}`);
+    });
+
+    randomBtn?.addEventListener("click", () => {
+      const t = randomPick(MBTI_CODES);
+      applyType(t);
+      toast(`🎲 隨機：${t}`);
+    });
+
+    openDetailBtn?.addEventListener("click", () => {
+      const t = applyType(typeInput?.value || typeSelect?.value);
+      if (!t) return;
+      renderTypeDetail(t);
+      openModal(modalType);
+    });
+  }
+
+  function initTestLink() {
+    const testUrl = $("#testUrl");
+    const openTestBtn = $("#openTestBtn");
+    const copyTypeBtn = $("#copyTypeBtn");
+
+    if (testUrl) {
+      const saved = loadLS(LS.testUrl, "");
+      if (saved) testUrl.value = saved;
+      testUrl.addEventListener("change", () => {
+        saveLS(LS.testUrl, testUrl.value.trim());
+      });
+      testUrl.addEventListener("blur", () => {
+        saveLS(LS.testUrl, testUrl.value.trim());
+      });
+    }
+
+    openTestBtn?.addEventListener("click", () => {
+      const url = (testUrl?.value || "").trim();
+      if (!url) {
+        toast("⚠️ 先貼上測驗網址");
+        return;
+      }
+      saveLS(LS.testUrl, url);
+      window.open(url, "_blank", "noopener");
+    });
+
+    copyTypeBtn?.addEventListener("click", () => {
+      const t = normalizeType($("#typeInput")?.value || $("#typeSelect")?.value);
+      if (!isValidType(t)) {
+        toast("⚠️ 請先選一個 MBTI");
+        return;
+      }
+      copyText(t);
+    });
+  }
+
+  /* ----------------------------
+   * Dock buttons -> open modals
+   * ---------------------------- */
+  function initDock() {
+    const dockPair = $("#dockPair");
+    const dockNotebook = $("#dockNotebook");
+    const modalPair = $("#modalPair");
+    const modalNotebook = $("#modalNotebook");
+
+    bindModalClose(modalPair);
+    bindModalClose(modalNotebook);
+
+    dockPair?.addEventListener("click", () => {
+      openModal(modalPair);
+    });
+    dockNotebook?.addEventListener("click", () => {
+      openModal(modalNotebook);
+      renderNotebookList();
+    });
+  }
+
+  /* ----------------------------
+   * Pair modal
+   * ---------------------------- */
+  let pairMode = "work"; // default
+
+  function initPair() {
+    const modalPair = $("#modalPair");
+    const pairA = $("#pairA");
+    const pairB = $("#pairB");
+    const pairBtn = $("#pairBtn");
+    const pairSwapBtn = $("#pairSwapBtn");
+    const pairContent = $("#modalPairContent");
+    const pairActionBtn = $("#pairActionBtn");
+    const pairSaveBtn = $("#pairSaveBtn");
+
+    // seg buttons
+    const segBtns = $$(".seg-btn", modalPair);
+
+    fillSelect(pairA);
+    fillSelect(pairB);
+
+    // default values from lastType
+    const lastType = loadLS(LS.lastType, "INFP");
+    if (pairA) pairA.value = isValidType(lastType) ? lastType : "INFP";
+    if (pairB) pairB.value = "ENFJ";
+
+    segBtns.forEach((btn) => {
+      btn.addEventListener("click", () => {
+        segBtns.forEach((b) => b.classList.remove("active"));
+        btn.classList.add("active");
+        pairMode = btn.getAttribute("data-mode") || "work";
+        // 如果已經有結果，切模式就重算
+        if (pairA?.value && pairB?.value && pairContent && pairContent.dataset.hasResult === "1") {
+          pairBtn?.click();
+        }
+      });
+    });
+
+    pairSwapBtn?.addEventListener("click", () => {
+      const a = pairA?.value;
+      const b = pairB?.value;
+      if (!a || !b) return;
+      pairA.value = b;
+      pairB.value = a;
+      toast("🔁 已交換");
+    });
+
+    const renderPair = () => {
+      const a = pairA?.value;
+      const b = pairB?.value;
+      if (!isValidType(a) || !isValidType(b)) {
+        toast("⚠️ 請先選擇兩種人格");
+        return null;
+      }
+      const res = pairAnalysis(a, b, pairMode);
+      if (pairContent) {
+        pairContent.dataset.hasResult = "1";
+        pairContent.innerHTML = `
+          <div class="card-soft" style="padding:10px;">
+            <div style="font-weight:900; margin-bottom:6px;">${escapeHTML(res.headline)}</div>
+
+            <div class="section-title" style="margin-top:8px;">✨ 相處特性</div>
+            <ul>${res.bullets.map((x) => `<li>${escapeHTML(x)}</li>`).join("")}</ul>
+
+            ${res.risks.length ? `
+              <div class="section-title" style="margin-top:8px;">⚠️ 可能卡點</div>
+              <ul>${res.risks.map((x) => `<li>${escapeHTML(x)}</li>`).join("")}</ul>
+            ` : ""}
+
+            <div class="section-title" style="margin-top:8px;">🧭 熊熊建議</div>
+            <ul>${res.tips.map((x) => `<li>${escapeHTML(x)}</li>`).join("")}</ul>
+
+            <div style="margin-top:10px; white-space:pre-wrap; line-height:1.6; font-weight:700;">
+              ${escapeHTML(res.bearLine)}
+            </div>
+
+            <div class="mini-actions" style="margin-top:10px;">
+              <button class="chip" id="pairCopyBtn">📌 複製這段分析</button>
+            </div>
+          </div>
+        `;
+
+        $("#pairCopyBtn")?.addEventListener("click", () => copyText(res.summaryText));
+      }
+      return res;
+    };
+
+    pairBtn?.addEventListener("click", renderPair);
+
+    pairActionBtn?.addEventListener("click", () => {
+      const a = pairA?.value;
+      const b = pairB?.value;
+      if (!isValidType(a) || !isValidType(b)) {
+        toast("⚠️ 請先選擇兩種人格");
+        return;
+      }
+      const actions = actionList3(a, b, pairMode);
+      const text =
+        `✅ 相處行動清單（${pairMode === "work" ? "職場" : "親密"}）\n` +
+        `${typeLabel(a)} × ${typeLabel(b)}\n\n` +
+        actions.map((x, i) => `${i + 1}. ${x.replace(/^✅\s*/, "")}`).join("\n");
+
+      if (pairContent) {
+        pairContent.innerHTML = `
+          <div class="card-soft" style="padding:10px;">
+            <div style="font-weight:900;">✅ 相處行動清單（3條）</div>
+            <div class="small" style="opacity:.85; margin-top:2px;">${escapeHTML(typeLabel(a))} × ${escapeHTML(typeLabel(b))}｜${escapeHTML(pairMode === "work" ? "職場" : "親密")}</div>
+            <ol style="margin-top:8px;">${actions.map((x) => `<li>${escapeHTML(x.replace(/^✅\s*/, ""))}</li>`).join("")}</ol>
+            <div class="mini-actions" style="margin-top:10px;">
+              <button class="chip" id="pairCopyActionsBtn">📌 複製行動清單</button>
+            </div>
+          </div>
+        `;
+        $("#pairCopyActionsBtn")?.addEventListener("click", () => copyText(text));
+      }
+      toast("✅ 已生成行動清單");
+    });
+
+    pairSaveBtn?.addEventListener("click", () => {
+      const a = pairA?.value;
+      const b = pairB?.value;
+      if (!isValidType(a) || !isValidType(b)) {
+        toast("⚠️ 請先選擇兩種人格");
+        return;
+      }
+
+      // 存「目前畫面」：若未按分析，就先分析一次
+      const res = renderPair() || pairAnalysis(a, b, pairMode);
+
+      const nb = getNotebook();
+      const id = cryptoId();
+
+      nb.pairs.unshift({
+        id,
+        createdAt: nowISO(),
+        mode: pairMode,
+        a,
+        b,
+        title: res.headline,
+        content: res.summaryText,
+      });
+
+      saveNotebook(nb);
+      toast("💾 已存進筆記本");
+    });
+  }
+
+  function cryptoId() {
+    // 兼容沒有 crypto.randomUUID 的環境
+    if (window.crypto && crypto.randomUUID) return crypto.randomUUID();
+    return "id_" + Math.random().toString(16).slice(2) + "_" + Date.now();
+  }
+
+  /* ----------------------------
+   * Notebook modal: bind actions
+   * ---------------------------- */
+  function initNotebook() {
+    const modalNotebook = $("#modalNotebook");
+    if (!modalNotebook) return;
+
+    const noteName = $("#noteName");
+    const noteCategory = $("#noteCategory");
+    const noteType = $("#noteType");
+    const noteZodiac = $("#noteZodiac");
+    const noteMemo = $("#noteMemo");
+
+    const noteAdviceBtn = $("#noteAdviceBtn");
+    const noteSaveBtn = $("#noteSaveBtn");
+    const noteExportBtn = $("#noteExportBtn");
+    const noteImportBtn = $("#noteImportBtn");
+    const noteImportFile = $("#noteImportFile");
+    const noteImportText = $("#noteImportText");
+    const noteImportTextBtn = $("#noteImportTextBtn");
+    const noteSearch = $("#noteSearch");
+    const noteClearBtn = $("#noteClearBtn");
+
+    // selects
+    fillSelect(noteType, { includeEmpty: false });
+
+    // filters chips
+    const chips = $$(".chip-filter", modalNotebook);
+    chips.forEach((chip) => {
+      chip.addEventListener("click", () => {
+        chips.forEach((c) => c.classList.remove("active"));
+        chip.classList.add("active");
+        noteState.filter = chip.getAttribute("data-filter") || "all";
+        renderNotebookList();
+      });
+    });
+
+    noteSearch?.addEventListener("input", () => {
+      noteState.q = noteSearch.value || "";
+      renderNotebookList();
+    });
+
+    noteAdviceBtn?.addEventListener("click", () => {
+      const name = (noteName?.value || "").trim();
+      const type = normalizeType(noteType?.value || "");
+      const memo = (noteMemo?.value || "").trim();
+
+      if (!isValidType(type)) {
+        toast("⚠️ 先選擇對方 MBTI");
+        return;
+      }
+
+      const advice = genAdviceForPerson(name, type, memo);
+      // 直接把建議塞進 memo 下方（不破壞你既有欄位）
+      // 我們把它加到 memo 末尾（如果你想分欄位，我也可以改成獨立區塊）
+      const combined = (memo ? memo + "\n\n" : "") + "—— 溝通建議 ——\n" + advice;
+      noteMemo.value = combined;
+      toast("🗣️ 已生成建議（已寫入備註）");
+    });
+
+    noteSaveBtn?.addEventListener("click", () => {
+      const name = (noteName?.value || "").trim();
+      const category = noteCategory?.value || "friend";
+      const type = normalizeType(noteType?.value || "");
+      const zodiac = (noteZodiac?.value || "").trim();
+      const memo = (noteMemo?.value || "").trim();
+
+      if (!name) {
+        toast("⚠️ 請輸入暱稱/名字");
+        return;
+      }
+      if (!isValidType(type)) {
+        toast("⚠️ 請選擇 MBTI");
+        return;
+      }
+
+      const nb = getNotebook();
+      nb.people.unshift({
+        id: cryptoId(),
+        createdAt: nowISO(),
+        name,
+        category,
+        type,
+        zodiac,
+        memo,
+        advice: "", // 先保留欄位（若你未來想分開顯示）
+      });
+
+      saveNotebook(nb);
+
+      // 清空表單
+      noteName.value = "";
+      noteZodiac.value = "";
+      noteMemo.value = "";
+
+      toast("➕ 已新增人物筆記");
+      renderNotebookList();
+    });
+
+    // Export JSON
+    noteExportBtn?.addEventListener("click", () => {
+      const nb = getNotebook();
+      const json = JSON.stringify(nb, null, 2);
+      const blob = new Blob([json], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `mbti-bear-notebook_${new Date().toISOString().slice(0, 10)}.json`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+
+      toast("📦 已匯出");
+    });
+
+    // Import JSON file
+    noteImportBtn?.addEventListener("click", () => {
+      noteImportFile?.click();
+    });
+
+    noteImportFile?.addEventListener("change", async () => {
+      const file = noteImportFile.files?.[0];
+      if (!file) return;
+
+      try {
+        const text = await file.text();
+        importNotebookFromText(text);
+        noteImportFile.value = "";
+      } catch {
+        toast("⚠️ 匯入失敗（檔案讀取錯誤）");
+      }
+    });
+
+    // Import from pasted text
+    noteImportTextBtn?.addEventListener("click", () => {
+      const text = (noteImportText?.value || "").trim();
+      if (!text) {
+        toast("⚠️ 先貼上 JSON 內容");
+        return;
+      }
+      importNotebookFromText(text);
+    });
+
+    function importNotebookFromText(text) {
+      const obj = safeParse(text, null);
+      if (!obj || typeof obj !== "object") {
+        toast("⚠️ JSON 格式不正確");
+        return;
+      }
+
+      const incoming = {
+        people: Array.isArray(obj.people) ? obj.people : [],
+        pairs: Array.isArray(obj.pairs) ? obj.pairs : [],
+      };
+
+      // 合併（避免覆蓋）
+      const nb = getNotebook();
+      const merged = {
+        people: [...incoming.people, ...nb.people],
+        pairs: [...incoming.pairs, ...nb.pairs],
+      };
+
+      // 去重（以 id）
+      merged.people = dedupeById(merged.people);
+      merged.pairs = dedupeById(merged.pairs);
+
+      saveNotebook(merged);
+      toast("✅ 匯入完成");
+      renderNotebookList();
+    }
+
+    function dedupeById(arr) {
+      const seen = new Set();
+      const out = [];
+      for (const it of arr) {
+        const id = it && it.id ? String(it.id) : null;
+        if (!id) {
+          // 沒 id 的給新 id
+          const copy = { ...it, id: cryptoId(), createdAt: it.createdAt || nowISO() };
+          out.push(copy);
+          continue;
+        }
+        if (seen.has(id)) continue;
+        seen.add(id);
+        out.push(it);
+      }
+      return out;
+    }
+
+    // Clear all
+    noteClearBtn?.addEventListener("click", () => {
+      const ok = confirm("確定要清空全部筆記嗎？（此動作無法復原）");
+      if (!ok) return;
+      saveNotebook({ people: [], pairs: [] });
+      toast("🧹 已清空");
+      renderNotebookList();
+    });
+
+    // 每次打開 modal 就刷新列表
+    modalNotebook.addEventListener("transitionend", () => {
+      if (modalNotebook.classList.contains("open")) renderNotebookList();
+    });
+  }
+
+  /* ----------------------------
+   * Init: fetch mbti.json and bind everything
+   * ---------------------------- */
+  async function loadMBTI() {
+    try {
+      const res = await fetch("./data/mbti.json", { cache: "no-store" });
+      if (!res.ok) throw new Error("HTTP " + res.status);
+      const json = await res.json();
+      MBTI = json || {};
+    } catch (e) {
+      console.error(e);
+      toast("⚠️ 讀取 data/mbti.json 失敗（路徑或 JSON 格式）");
+      MBTI = {};
+    }
+  }
+
+  function guardData() {
+    // 確保至少有 16 型中的一部分可用
+    const hasAny = MBTI_CODES.some((c) => !!MBTI[c]);
+    if (!hasAny) {
+      // 如果你 json 目前只有部分型別，至少不讓功能爆炸
+      // 但會提醒
+      console.warn("mbti.json does not contain standard 16 types (or fetch failed).");
+    }
+  }
+
+  function initGlobals() {
+    // 讓輸入自動大寫
+    const typeInput = $("#typeInput");
+    typeInput?.addEventListener("input", () => {
+      const v = normalizeType(typeInput.value);
+      typeInput.value = v;
+    });
+
+    // 點 dockPair 時，active 樣式維持（你 CSS 若有）
+    $("#dockPair")?.addEventListener("click", () => {
+      $$(".dock-btn").forEach((b) => b.classList.remove("active"));
+      $("#dockPair")?.classList.add("active");
+    });
+    $("#dockNotebook")?.addEventListener("click", () => {
+      $$(".dock-btn").forEach((b) => b.classList.remove("active"));
+      $("#dockNotebook")?.classList.add("active");
+    });
+  }
+
+  async function init() {
+    ensureToast();
+    initBearChat();
+
+    // load data first
+    await loadMBTI();
+    guardData();
+
+    initGlobals();
+    initDock();
+    initTypeSearch();
+    initTestLink();
+    initPair();
+    initNotebook();
+
+    // 初始泡泡
+    setBubble("點一下熊熊，我會跟你聊天 🫶");
+  }
+
+  // start
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", init);
+  } else {
+    init();
+  }
 })();
